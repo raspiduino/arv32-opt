@@ -138,7 +138,7 @@ Dump completed. Emulator will continue when B1 is set back to HIGH
 ## Credits
 - [cnlohr](https://github.com/cnlohr) for writing (mini-rv32ima)[https://github.com/cnlohr/mini-rv32ima/].
 - [ryanj1234](https://github.com/ryanj1234) for writing (SD_TUTORIAL_PART4)[https://github.com/ryanj1234/SD_TUTORIAL_PART4].
-- [me (gvl610/raspiduino)] for bringing all this stuff together.
+- [me (gvl610/raspiduino)](https://github.com/raspiduino) for bringing all this stuff together.
 
 ## One last thing
 If you can run this, you probably are running world's worst Linux PC. Enjoy!

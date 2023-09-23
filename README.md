@@ -136,8 +136,8 @@ Dump completed. Emulator will continue when B1 is set back to HIGH
 - Automatically replacing new state is not implemented yet. So every time you run the emulator, you must repeat the `Preparing the SD card` section.
 
 ## Credits
-- [cnlohr](https://github.com/cnlohr) for writing (mini-rv32ima)[https://github.com/cnlohr/mini-rv32ima/].
-- [ryanj1234](https://github.com/ryanj1234) for writing (SD_TUTORIAL_PART4)[https://github.com/ryanj1234/SD_TUTORIAL_PART4].
+- [cnlohr](https://github.com/cnlohr) for writing [mini-rv32ima](https://github.com/cnlohr/mini-rv32ima/).
+- [ryanj1234](https://github.com/ryanj1234) for writing [SD_TUTORIAL_PART4](https://github.com/ryanj1234/SD_TUTORIAL_PART4).
 - [me (gvl610/raspiduino)](https://github.com/raspiduino) for bringing all this stuff together.
 
 ## One last thing

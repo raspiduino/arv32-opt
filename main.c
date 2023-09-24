@@ -24,6 +24,9 @@
 // UART baudrate. Default is 9600
 #define BAUD_RATE 9600
 
+// Enable/disable cache hit/miss information
+#define ENABLE_CACHE_STAT
+
 // Headers
 #include <avr/io.h>
 #include <util/delay.h>
@@ -48,6 +51,14 @@ UInt8 icache[SD_BLOCK_LEN];
 UInt8 dcache[SD_BLOCK_LEN];
 UInt32 last_sector = 0;
 UInt32 last_sectori = 0;
+
+// Cache hit / miss stat
+#ifdef ENABLE_CACHE_STAT
+UInt32 icache_hit = 0;
+UInt32 icache_miss = 0;
+UInt32 dcache_hit = 0;
+UInt32 dcache_miss = 0;
+#endif
 
 // Functions prototype
 static UInt32 HandleException( UInt32 ir, UInt32 retval );
@@ -201,6 +212,18 @@ int main(void) {
             UART_putdec32((int) SP - (__brkval == 0 ? (int) &__heap_start : (int) __brkval));
             UART_pputs(" bytes\r\n");
 
+            // Print icache/dcache hit/miss
+#ifdef ENABLE_CACHE_STAT
+            UART_pputs("icache hit/miss: ");
+            UART_putdec32(icache_hit);
+            UART_pputs("/");
+            UART_putdec32(icache_miss);
+            UART_pputs("; dcache hit/miss: ");
+            UART_putdec32(dcache_hit);
+            UART_pputs("/");
+            UART_putdec32(dcache_miss);
+            UART_pputs("\r\n");
+#endif
             // Dump state
             dump_state();
             UART_pputs("Dump completed. Emulator will continue when B1 is set back to HIGH\r\n");
@@ -313,14 +336,22 @@ void read_buf(UInt32 ofs, UInt8 flag) {
         s = ofs / SD_BLOCK_LEN;
 
         // If sector num the same as last one, then return because we already read that sector
-        if (s == last_sector)
+        if (s == last_sector) {
+#ifdef ENABLE_CACHE_STAT
+            dcache_hit++;
+#endif
             return;
-        else
+        } else {
             last_sector = s;
+        }
     } else {
         // Fetch n + 1 sector
         s = ++last_sector;
     }
+
+#ifdef ENABLE_CACHE_STAT
+    dcache_miss++;
+#endif
 
     UInt8 res, token;
     UInt8 t = 0;
@@ -366,14 +397,22 @@ void read_bufi(UInt32 ofs, UInt8 flag) {
 
         // If sector num the same as last one, then return because we already read that sector
         // Flush cache if required
-        if (s == last_sectori)
+        if (s == last_sectori) {
+#ifdef ENABLE_CACHE_STAT
+            icache_hit++;
+#endif
             return;
-        else
+        } else {
             last_sectori = s;
+        }
     } else {
         // Fetch n + 1 sector
         s = ++last_sectori;
     }
+
+#ifdef ENABLE_CACHE_STAT
+    icache_miss++;
+#endif
 
     UInt8 res, token;
     UInt8 t = 0;

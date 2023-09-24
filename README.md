@@ -12,7 +12,10 @@ The idea is really simple: you have an Arduino UNO (or atmega328p) to run the em
 The code is written in pure C (and not Arduino) to reduce Arduino overhead (if any). It initializes UART, SPI, SD card, and a digital input-pullup pin for triggering emulator state dump. Finally, it initialize mini-rv32ima and let the emulator does its works.
 
 ## How fast is it?
-About 175Hz - 205Hz with `-O3` code on an Arduino UNO based on atmega328p, clocked at 16MHz, with a class 4 SDHC card connected via 1-bit SPI interface. The time for fully booting Linux is estimated to be `119.4` hours, or `4.96` days, if calculated correctly.
+About ~~175Hz - 205Hz~~ 535 - 600 Hz with `-O3` code on an Arduino UNO based on atmega328p, clocked at 16MHz, with a class 4 SDHC card connected via 1-bit SPI interface. The time for fully booting Linux is estimated to be ~~`119.4` hours, or `4.96` days~~ `39.1` hours, or `1.63` day, if calculated correctly.
+
+Update 24/9/2023: The speed is tripled by implementing icache
+
 <br> Why it's *that* slow? Read `Current issues and drawbacks` section below.
 
 ## Pinout
@@ -138,6 +141,7 @@ Dump completed. Emulator will continue when B1 is set back to HIGH
 ## Credits
 - [cnlohr](https://github.com/cnlohr) for writing [mini-rv32ima](https://github.com/cnlohr/mini-rv32ima/).
 - [ryanj1234](https://github.com/ryanj1234) for writing [SD_TUTORIAL_PART4](https://github.com/ryanj1234/SD_TUTORIAL_PART4).
+- [adnbr](https://github.com/adnbr/) for writing [1 ms counter](https://gist.github.com/adnbr/2439125)
 - [me (gvl610/raspiduino)](https://github.com/raspiduino) for bringing all this stuff together.
 
 ## One last thing

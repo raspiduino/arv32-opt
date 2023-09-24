@@ -12,9 +12,9 @@ The idea is really simple: you have an Arduino UNO (or atmega328p) to run the em
 The code is written in pure C (and not Arduino) to reduce Arduino overhead (if any). It initializes UART, SPI, SD card, and a digital input-pullup pin for triggering emulator state dump. Finally, it initialize mini-rv32ima and let the emulator does its works.
 
 ## How fast is it?
-About ~~175Hz - 205Hz~~ 535 - 600 Hz with `-O3` code on an Arduino UNO based on atmega328p, clocked at 16MHz, with a class 4 SDHC card connected via 1-bit SPI interface. The time for fully booting Linux is estimated to be ~~`119.4` hours, or `4.96` days~~ `39.1` hours, or `1.63` day, if calculated correctly.
+About ~~175Hz - 205Hz~~ 425 - 600 Hz with `-O3` code on an Arduino UNO based on atmega328p, clocked at 16MHz, with a class 4 SDHC card connected via 1-bit SPI interface. The time for fully booting Linux is estimated to be ~~`119.4` hours, or `4.96` days~~ `39.1` hours, or `1.63` day, if calculated correctly.
 
-Update 24/9/2023: The speed is tripled by implementing icache
+Update 24/9/2023: The speed is double/tripled by implementing icache
 
 <br> Why it's *that* slow? Read `Current issues and drawbacks` section below.
 
@@ -89,23 +89,24 @@ and (optionally, but normally, if your board is fast enough) the line `Currently
 
 You can also dump the state of the emulator while it's running. Just connect a button to `GND` and then connect pin 9 to the button. When you click the button, state will be dump, and you should see something like this:
 ```text
-Effective emulated speed: 191 Hz, dtime=3299929ms, dcycle=631808
+Effective emulated speed: 426 Hz, dtime=5632385ms, dcycle=2403328
+Current AVR free memory: 689 bytes
 ==============================================================================
 Dumping emulator state:
 Registers x0 - x31:
-0x00000000 0x80032D4C 0x8027FC70 0x802C29D0
+0x00000000 0x80034C74 0x8027FBF0 0x802C29D0
 0x80281340 0x000A6465 0x00006C62 0x64656C62
-0x8027FD30 0x802BD0E8 0x80284E0C 0x00000003
-0x00000000 0x8027FC94 0x00000001 0x00000400
-0x80284E0C 0x0000FFFF 0x00000000 0x00000000
-0x802C6FEC 0x00000000 0x802C3000 0x8027FD4B
-0x00000000 0x802C7000 0xFFFFFFFF 0x00000000
-0x802C918C 0x802C918C 0x802C916C 0x8027FCCC
-pc: 0x80035718
+0x8027FC70 0x80284E0C 0x00000000 0x802B0E80
+0x00000003 0x00000003 0x00000000 0x00000000
+0x80284E0C 0x0000FFFF 0x8027FC78 0x8027FC94
+0x00000000 0xBFFFF803 0x3FFFFFFF 0x80284E50
+0x00000003 0x802C7000 0x0000000C 0x00000058
+0x802C918C 0x802C918C 0x802C916C 0x8027FC2C
+pc: 0x80034C74
 mstatus: 0x00000000
-cyclel: 0x0009A400
+cyclel: 0x002BA800
 cycleh: 0x00000000
-timerl: 0x0009A000
+timerl: 0x002BA400
 timerh: 0x00000000
 timermatchl: 0x00000000
 timermatchh: 0x00000000
@@ -118,7 +119,6 @@ mtval: 0x00000000
 mcause: 0x00000000
 extraflags: 0x015873A3
 ==============================================================================
-
 Dump completed. Emulator will continue when B1 is set back to HIGH
 ```
 `Effective emulated speed` is the number of instructions the emulator can execute in 1 second at that time. `dtime` is the time difference between current time and the last time you dump the status. `dcycle` is the number of cycle (instructions) excuted from the last time you dump the status until now.

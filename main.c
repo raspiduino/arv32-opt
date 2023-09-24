@@ -24,6 +24,9 @@
 // UART baudrate. Default is 9600
 #define BAUD_RATE 9600
 
+// Enable/disable cache hit/miss information
+#define ENABLE_CACHE_STAT
+
 // Headers
 #include <avr/io.h>
 #include <util/delay.h>
@@ -48,6 +51,14 @@ UInt8 icache[SD_BLOCK_LEN];
 UInt8 dcache[SD_BLOCK_LEN];
 UInt32 last_sector = 0;
 UInt32 last_sectori = 0;
+
+// Cache hit / miss stat
+#ifdef ENABLE_CACHE_STAT
+UInt32 icache_hit = 0;
+UInt32 icache_miss = 0;
+UInt32 dcache_hit = 0;
+UInt32 dcache_miss = 0;
+#endif
 
 // Functions prototype
 static UInt32 HandleException( UInt32 ir, UInt32 retval );
@@ -147,7 +158,7 @@ int main(void) {
 
     // Setup core
     core->pc = MINIRV32_RAM_IMAGE_OFFSET;
-    core->regs[10] = 0x00; //hart ID
+    core->regs[10] = 0x00; // hart ID
     core->regs[11] = RAM_SIZE - sizeof(struct MiniRV32IMAState) - DTB_SIZE + MINIRV32_RAM_IMAGE_OFFSET; // dtb_pa (Must be valid pointer) (Should be pointer to dtb)
     core->extraflags |= 3; // Machine-mode.
 
@@ -201,6 +212,18 @@ int main(void) {
             UART_putdec32((int) SP - (__brkval == 0 ? (int) &__heap_start : (int) __brkval));
             UART_pputs(" bytes\r\n");
 
+            // Print icache/dcache hit/miss
+#ifdef ENABLE_CACHE_STAT
+            UART_pputs("icache hit/miss: ");
+            UART_putdec32(icache_hit);
+            UART_pputs("/");
+            UART_putdec32(icache_miss);
+            UART_pputs("; dcache hit/miss: ");
+            UART_putdec32(dcache_hit);
+            UART_pputs("/");
+            UART_putdec32(dcache_miss);
+            UART_pputs("\r\n");
+#endif
             // Dump state
             dump_state();
             UART_pputs("Dump completed. Emulator will continue when B1 is set back to HIGH\r\n");
@@ -296,6 +319,43 @@ static void HandleOtherCSRWrite( UInt8 * image, UInt16 csrno, UInt32 value )
     }*/
 }
 
+UInt8 need_write = 0;
+
+void check_flush_dcache(void) {
+    UInt8 res, token;
+    UInt8 t = 0;
+
+    // Only continue if we need to write
+    if (!need_write) return;
+
+write_begin:
+    // Write to last sector (since you already read last sector, then modify the content before you can write)
+    res = SD_writeSingleBlock(last_sector, dcache, &token);
+
+    // If no error -> return
+    if((res == 0x00) && (token == SD_DATA_ACCEPTED)) {
+        need_write = 0;
+        return;
+    }
+
+    // Else if error token received, print
+    else if(!(token & 0xF0))
+    {
+        if (++t == 10) {
+            UART_pputs("write_buf @ sector ");
+            UART_puthex32(last_sector);
+            UART_pputs(" error, error token:\r\n");
+            SD_printDataErrToken(token);
+            dump_state();
+            UART_pputs("write_buf: failed 10 times in a row. Halting\r\n");
+            while(1); // Halt
+        }
+
+        _delay_ms(100);
+        goto write_begin;
+    }
+}
+
 void read_buf(UInt32 ofs, UInt8 flag) {
     uint32_t s;
 
@@ -313,14 +373,25 @@ void read_buf(UInt32 ofs, UInt8 flag) {
         s = ofs / SD_BLOCK_LEN;
 
         // If sector num the same as last one, then return because we already read that sector
-        if (s == last_sector)
+        if (s == last_sector) {
+#ifdef ENABLE_CACHE_STAT
+            ++dcache_hit;
+#endif
             return;
-        else
+        } else {
+            check_flush_dcache();
             last_sector = s;
+        }
     } else {
+        check_flush_dcache();
+
         // Fetch n + 1 sector
         s = ++last_sector;
     }
+
+#ifdef ENABLE_CACHE_STAT
+    ++dcache_miss;
+#endif
 
     UInt8 res, token;
     UInt8 t = 0;
@@ -364,16 +435,31 @@ void read_bufi(UInt32 ofs, UInt8 flag) {
         // Dividing on AVR is a pain, so we should avoid that if we can
         s = ofs / SD_BLOCK_LEN;
 
+        // If icache sector now move to the same as current dcache sector, we should copy
+        // dcache to icache instead of re-reading
+        if (s == last_sector) {
+            memcpy(icache, dcache, SD_BLOCK_LEN);
+#ifdef ENABLE_CACHE_STAT
+            ++icache_hit;
+#endif
+            return;
+        }
+
         // If sector num the same as last one, then return because we already read that sector
         // Flush cache if required
-        if (s == last_sectori)
+        if (s == last_sectori) {
+            ++icache_hit;
             return;
-        else
+        } else
             last_sectori = s;
     } else {
         // Fetch n + 1 sector
         s = ++last_sectori;
     }
+
+#ifdef ENABLE_CACHE_STAT
+    ++icache_miss;
+#endif
 
     UInt8 res, token;
     UInt8 t = 0;
@@ -402,54 +488,20 @@ readi_begin:
 }
 
 void write_buf(void) {
-    UInt8 res, token;
-    UInt8 t = 0;
-
     // Set flush icache if needed
     if (last_sector == last_sectori) {
         // If we write in the same sector as icache, then we need to flush icache to support self-modifying code
         memcpy(icache, dcache, SD_BLOCK_LEN);
     }
 
-write_begin:
-    // Write to last sector (since you already read last sector, then modify the content before you can write)
-    res = SD_writeSingleBlock(last_sector, dcache, &token);
-
-    // If no error -> return
-    if((res == 0x00) && (token == SD_DATA_ACCEPTED))
-        return;
-    // Else if error token received, print
-    else if(!(token & 0xF0))
-    {
-        if (++t == 10) {
-            UART_pputs("write_buf @ sector ");
-            UART_puthex32(last_sector);
-            UART_pputs(" error, error token:\r\n");
-            SD_printDataErrToken(token);
-            dump_state();
-            UART_pputs("write_buf: failed 10 times in a row. Halting\r\n");
-            while(1); // Halt
-        }
-
-        _delay_ms(100);
-        goto write_begin;
-    }
+    // Actual write is done before reading a new sector
+    // We just set the need_write flag here
+    need_write = 1;
 }
 
 // Memory access functions
-
 static UInt32 loadi(UInt32 ofs) {
     // Load instruction from icache
-
-    // No longer needed since it's now done in ram file
-    /*if (ofs == 0xB8) {
-        // Skip memory clean
-        UART_pputs("Currently at 0xB8\r\n");
-        if (dh == 1) {while(1);}
-        dh = 1;
-        return 0xFEE6DCE3; // RISC-V opcode to skip the memory-cleaning loop. Got by disassembling the RAM dump
-    }*/
-
     UInt32 result;
     UInt16 r = ofs % 512;
     read_bufi(ofs, 0);

@@ -30,7 +30,7 @@
 #endif
 
 #ifndef MINIRV32_RAM_IMAGE_OFFSET
-	#define MINIRV32_RAM_IMAGE_OFFSET  0x80000000
+	#define MINIRV32_RAM_IMAGE_OFFSET  0x80000000UL
 #endif
 
 #ifndef MINIRV32_POSTEXEC
@@ -165,7 +165,7 @@ MINIRV32_STEPPROTO
 		}
 		else
 		{
-			ir = MINIRV32_LOAD4( ofs_pc );
+			ir = MINIRV32_LOADI( ofs_pc );
 			uint32_t rdid = (ir >> 7) & 0x1f;
 
 			switch( ir & 0x7f )

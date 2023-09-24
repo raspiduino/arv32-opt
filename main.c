@@ -18,7 +18,7 @@
 
 // Frequency that atmega328p is running on. Default is 16MHz on Arduino UNO board
 #ifndef F_CPU
-#define F_CPU 16000000
+#define F_CPU 16000000UL
 #endif
 
 // UART baudrate. Default is 9600
@@ -44,8 +44,10 @@ uint64_t lastTime = 0;
 struct MiniRV32IMAState *core;
 
 // SD access variables
-UInt8 buf[SD_BLOCK_LEN];
+UInt8 icache[SD_BLOCK_LEN];
+UInt8 dcache[SD_BLOCK_LEN];
 UInt32 last_sector = 0;
+UInt32 last_sectori = 0;
 
 // Functions prototype
 static UInt32 HandleException( UInt32 ir, UInt32 retval );
@@ -62,14 +64,16 @@ static UInt32 load4(UInt32 ofs);
 static UInt16 load2(UInt32 ofs);
 static UInt8 load1(UInt32 ofs);
 
+static UInt32 loadi(UInt32 ofs);
+
 // Other
 UInt32 last_cyclel = 0; // Last cyclel value
 void dump_state(void);
 
 // Config
-const UInt32 RAM_SIZE = 12582912; // Minimum RAM amount (in bytes), just tested (may reduce further by custom kernel)
-#define DTB_SIZE 1536             // DTB size (in bytes), must recount manually each time DTB changes
-#define INSTRS_PER_FLIP 1024      // Number of instructions executed before checking status. See loop()
+const UInt32 RAM_SIZE = 12582912UL; // Minimum RAM amount (in bytes), just tested (may reduce further by custom kernel)
+#define DTB_SIZE 1536               // DTB size (in bytes), must recount manually each time DTB changes
+#define INSTRS_PER_FLIP 1024        // Number of instructions executed before checking status. See loop()
 #define TIME_DIVISOR 1
 
 // Setup mini-rv32ima
@@ -94,6 +98,7 @@ const UInt32 RAM_SIZE = 12582912; // Minimum RAM amount (in bytes), just tested 
 #define MINIRV32_LOAD2( ofs ) load2(ofs)
 #define MINIRV32_LOAD1_SIGNED( ofs ) (Int8)load1(ofs)
 #define MINIRV32_LOAD1( ofs ) load1(ofs)
+#define MINIRV32_LOADI( ofs ) loadi(ofs)
 
 #include "mini-rv32ima.h"
 
@@ -146,9 +151,18 @@ int main(void) {
     core->regs[11] = RAM_SIZE - sizeof(struct MiniRV32IMAState) - DTB_SIZE + MINIRV32_RAM_IMAGE_OFFSET; // dtb_pa (Must be valid pointer) (Should be pointer to dtb)
     core->extraflags |= 3; // Machine-mode.
 
-    // Prefetch first sector
+    // Prefetch first sector to dcache and icache
     UInt8 token;
-    SD_readSingleBlock(0, buf, &token);
+    SD_readSingleBlock(0, dcache, &token);
+    memcpy(icache, dcache, SD_BLOCK_LEN);
+
+    // Patch the ram to skip memory cleaning
+    // We should patch it in the icache, not in the memory. Otherwise PC will jump to 0x0 for some reason
+    // Maybe the code is actually copied to somewhere else
+    // 0xFEE6CCE3: Original opcode at 0xB9
+    // 0xFEE6DCE3: Opcode to skip the memory-cleaning loop. Got by disassembling the RAM dump)
+    // This works by changing BLT (branch less than) to BGE (branch greater or equal)
+    icache[0xB9] = 0xDC;
 
     // Set digital pin 9 to input pullup, see loop
     PORTB |= (1 << PINB1);
@@ -159,6 +173,13 @@ int main(void) {
     OCR1AL = 208; // then the low byte into the output compare
     TIMSK1 |= (1 << OCIE1A); // Enable the compare match interrupt
     sei(); // Now enable global interrupts
+
+    // Print current free memory
+    extern int __heap_start;
+    extern int *__brkval;
+    UART_pputs("Current AVR free memory: ");
+    UART_putdec32((int) SP - (__brkval == 0 ? (int) &__heap_start : (int) __brkval));
+    UART_pputs(" bytes\r\n");
 
     // Emulator loop
     // It's stated in the AVR documentation that writing do ... while() is faster than while()
@@ -174,6 +195,11 @@ int main(void) {
             UART_pputs("ms, dcycle=");
             UART_putdec32(core->cyclel - last_cyclel);
             UART_pputs("\r\n");
+
+            // Print current free memory
+            UART_pputs("Current AVR free memory: ");
+            UART_putdec32((int) SP - (__brkval == 0 ? (int) &__heap_start : (int) __brkval));
+            UART_pputs(" bytes\r\n");
 
             // Dump state
             dump_state();
@@ -205,65 +231,69 @@ int main(void) {
             default: UART_pputs("Unknown failure\r\n"); break;
         }
     } while (1);
+
+    // Should not get here
+    while(1);
 }
 
 // Exception handlers
 static UInt32 HandleException( UInt32 ir, UInt32 code )
 {
-  // Weird opcode emitted by duktape on exit.
-  if( code == 3 )
-  {
-    // Could handle other opcodes here.
-  }
-  return code;
+    // Weird opcode emitted by duktape on exit.
+    if( code == 3 )
+    {
+        // Could handle other opcodes here.
+    }
+    return code;
 }
 
 static UInt32 HandleControlStore( UInt32 addy, UInt32 val )
 {
-  if( addy == 0x10000000 ) //UART 8250 / 16550 Data Buffer
-  {
-    UART_putc((char)val);
-  }
-  
-  return 0;
+    if( addy == 0x10000000 ) //UART 8250 / 16550 Data Buffer
+    {
+        UART_putc((char)val);
+    }
+    
+    return 0;
 }
-
 
 static UInt32 HandleControlLoad( UInt32 addy )
 {
-  // Emulating a 8250 / 16550 UART
-  if ( addy == 0x10000005 )
-    return 0x60 | UART_available();
-  else if ( addy == 0x10000000 && (UART_available()) )
-    return UART_getc();
-  return 0;
+    // Emulating a 8250 / 16550 UART
+    if ( addy == 0x10000005 )
+        return 0x60 | UART_available();
+    else if ( addy == 0x10000000 && (UART_available()) )
+        return UART_getc();
+    return 0;
 }
 
 static void HandleOtherCSRWrite( UInt8 * image, UInt16 csrno, UInt32 value )
 {
-  /*if( csrno == 0x136 )
-  {
-    Serial.print(value);
-  }
-  if( csrno == 0x137 )
-  {
-    Serial.print(value, HEX);
-  }
-  else if( csrno == 0x138 )
-  {
-    // Print "string"
-    UInt32 ptrstart = value - MINIRV32_RAM_IMAGE_OFFSET;
-    UInt32 ptrend = ptrstart;
-    if( ptrstart >= ram_amt )
-      printf( "DEBUG PASSED INVALID PTR (%08x)\n", value );
-    while( ptrend < ram_amt )
+    if( csrno == 0x136 )
     {
-      if( image[ptrend] == 0 ) break;
-      ptrend++;
+        UART_putdec32(value);
     }
-    if( ptrend != ptrstart )
-      fwrite( image + ptrstart, ptrend - ptrstart, 1, stdout );
-  }*/
+
+    if( csrno == 0x137 )
+    {
+        UART_puthex32(value);
+    }
+
+    /*else if( csrno == 0x138 )
+    {
+        // Print "string"
+        UInt32 ptrstart = value - MINIRV32_RAM_IMAGE_OFFSET;
+        UInt32 ptrend = ptrstart;
+        if( ptrstart >= ram_amt )
+        printf( "DEBUG PASSED INVALID PTR (%08x)\n", value );
+        while( ptrend < ram_amt )
+        {
+        if( image[ptrend] == 0 ) break;
+        ptrend++;
+        }
+        if( ptrend != ptrstart )
+        fwrite( image + ptrstart, ptrend - ptrstart, 1, stdout );
+    }*/
 }
 
 void read_buf(UInt32 ofs, UInt8 flag) {
@@ -295,7 +325,7 @@ void read_buf(UInt32 ofs, UInt8 flag) {
     UInt8 res, token;
     UInt8 t = 0;
 read_begin:
-    res = SD_readSingleBlock(s, buf, &token);
+    res = SD_readSingleBlock(s, dcache, &token);
 
     // If no error -> return
     if((res == 0x00) && (token == SD_START_TOKEN))
@@ -303,9 +333,11 @@ read_begin:
     // Else if error token received, print
     else if(!(token & 0xF0))
     {
-        UART_pputs("read_buf error, error token:\r\n");
-        SD_printDataErrToken(token);
         if (++t == 10) {
+            UART_pputs("read_buf @ ");
+            UART_puthex32(ofs);
+            UART_pputs(" error, error token:\r\n");
+            SD_printDataErrToken(token);
             dump_state();
             UART_pputs("read_buf: failed 10 times in a row. Halting\r\n");
             while(1); // Halt
@@ -315,12 +347,71 @@ read_begin:
     }
 }
 
+void read_bufi(UInt32 ofs, UInt8 flag) {
+    uint32_t s;
+
+    /*
+     * Some operations might involve read/write bytes that are located between 2 sectors on
+     * the SD card. In that case, we have to fetch 2 continuous sectors at a time. Since
+     * we already know the last sector number, we can just read the n + 1 sector and skip
+     * the division (which is a pain on AVR). The flag parameter is used for this. When
+     * flag is 0, we will calculate the sector number. Else, we will just fetch the n + 1
+     * sector.
+     */
+    if (flag == 0) {
+        // Calculate sector num
+        // Dividing on AVR is a pain, so we should avoid that if we can
+        s = ofs / SD_BLOCK_LEN;
+
+        // If sector num the same as last one, then return because we already read that sector
+        // Flush cache if required
+        if (s == last_sectori)
+            return;
+        else
+            last_sectori = s;
+    } else {
+        // Fetch n + 1 sector
+        s = ++last_sectori;
+    }
+
+    UInt8 res, token;
+    UInt8 t = 0;
+readi_begin:
+    res = SD_readSingleBlock(s, icache, &token);
+
+    // If no error -> return
+    if((res == 0x00) && (token == SD_START_TOKEN))
+        return;
+    // Else if error token received, print
+    else if(!(token & 0xF0))
+    {
+        if (++t == 10) {
+            UART_pputs("read_buf @ ");
+            UART_puthex32(ofs);
+            UART_pputs(" error, error token:\r\n");
+            SD_printDataErrToken(token);
+            dump_state();
+            UART_pputs("read_bufi: failed 10 times in a row. Halting\r\n");
+            while(1); // Halt
+        }
+
+        goto readi_begin;
+    }
+}
+
 void write_buf(void) {
     UInt8 res, token;
     UInt8 t = 0;
+
+    // Set flush icache if needed
+    if (last_sector == last_sectori) {
+        // If we write in the same sector as icache, then we need to flush icache to support self-modifying code
+        memcpy(icache, dcache, SD_BLOCK_LEN);
+    }
+
 write_begin:
     // Write to last sector (since you already read last sector, then modify the content before you can write)
-    res = SD_writeSingleBlock(last_sector, buf, &token);
+    res = SD_writeSingleBlock(last_sector, dcache, &token);
 
     // If no error -> return
     if((res == 0x00) && (token == SD_DATA_ACCEPTED))
@@ -328,9 +419,11 @@ write_begin:
     // Else if error token received, print
     else if(!(token & 0xF0))
     {
-        UART_pputs("write_buf error, error token:\r\n");
-        SD_printDataErrToken(token);
         if (++t == 10) {
+            UART_pputs("write_buf @ sector ");
+            UART_puthex32(last_sector);
+            UART_pputs(" error, error token:\r\n");
+            SD_printDataErrToken(token);
             dump_state();
             UART_pputs("write_buf: failed 10 times in a row. Halting\r\n");
             while(1); // Halt
@@ -341,17 +434,57 @@ write_begin:
 }
 
 // Memory access functions
-static UInt32 load4(UInt32 ofs) {
-    static int dh = 0;
-    UInt32 result;
 
-    if (ofs == 0xB8) {
+static UInt32 loadi(UInt32 ofs) {
+    // Load instruction from icache
+
+    // No longer needed since it's now done in ram file
+    /*if (ofs == 0xB8) {
         // Skip memory clean
         UART_pputs("Currently at 0xB8\r\n");
         if (dh == 1) {while(1);}
         dh = 1;
         return 0xFEE6DCE3; // RISC-V opcode to skip the memory-cleaning loop. Got by disassembling the RAM dump
+    }*/
+
+    UInt32 result;
+    UInt16 r = ofs % 512;
+    read_bufi(ofs, 0);
+    if (r >= 509) {
+        // 1 - 3 bytes are in nth sector, and the others in n + 1 sector
+        // Read the nth sector and get the bytes in that sector
+        UInt8 i = 0;
+        for (; i < SD_BLOCK_LEN - r; i++) {
+            ((UInt8 *)&result)[i] = icache[r + i];
+        }
+
+        // Read the next sector and get the remaining bytes
+        read_buf(ofs, 1);
+        for (UInt8 j = 0; j < r - 508; j++) {
+            ((UInt8 *)&result)[i + j] = icache[j];
+        }
+
+        return result;
     }
+
+    ((UInt8 *)&result)[0] = icache[r];     // LSB
+    ((UInt8 *)&result)[1] = icache[r + 1];
+    ((UInt8 *)&result)[2] = icache[r + 2];
+    ((UInt8 *)&result)[3] = icache[r + 3]; // MSB
+    return result;
+}
+
+static UInt32 load4(UInt32 ofs) {
+    UInt32 result;
+
+    // No longer needed since it's now done in ram file
+    /*if (ofs == 0xB8) {
+        // Skip memory clean
+        UART_pputs("Currently at 0xB8\r\n");
+        if (dh == 1) {while(1);}
+        dh = 1;
+        return 0xFEE6DCE3; // RISC-V opcode to skip the memory-cleaning loop. Got by disassembling the RAM dump
+    }*/
 
     UInt16 r = ofs % 512;
     read_buf(ofs, 0);
@@ -360,22 +493,22 @@ static UInt32 load4(UInt32 ofs) {
         // Read the nth sector and get the bytes in that sector
         UInt8 i = 0;
         for (; i < SD_BLOCK_LEN - r; i++) {
-            ((UInt8 *)&result)[i] = buf[r + i];
+            ((UInt8 *)&result)[i] = dcache[r + i];
         }
 
         // Read the next sector and get the remaining bytes
         read_buf(ofs, 1);
         for (UInt8 j = 0; j < r - 508; j++) {
-            ((UInt8 *)&result)[i + j] = buf[j];
+            ((UInt8 *)&result)[i + j] = dcache[j];
         }
 
         return result;
     }
 
-    ((UInt8 *)&result)[0] = buf[r];     // LSB
-    ((UInt8 *)&result)[1] = buf[r + 1];
-    ((UInt8 *)&result)[2] = buf[r + 2];
-    ((UInt8 *)&result)[3] = buf[r + 3]; // MSB
+    ((UInt8 *)&result)[0] = dcache[r];     // LSB
+    ((UInt8 *)&result)[1] = dcache[r + 1];
+    ((UInt8 *)&result)[2] = dcache[r + 2];
+    ((UInt8 *)&result)[3] = dcache[r + 3]; // MSB
     return result;
 }
 static UInt16 load2(UInt32 ofs) {
@@ -384,22 +517,22 @@ static UInt16 load2(UInt32 ofs) {
     read_buf(ofs, 0);
     if (r == 511) {
         // LSB located in nth sector
-        ((UInt8 *)&result)[0] = buf[511];
+        ((UInt8 *)&result)[0] = dcache[511];
 
         // MSB located in n + 1 sector
         read_buf(ofs, 1);
-        ((UInt8 *)&result)[1] = buf[0];
+        ((UInt8 *)&result)[1] = dcache[0];
 
         return result;
     }
 
-    ((UInt8 *)&result)[0] = buf[r];     // LSB
-    ((UInt8 *)&result)[1] = buf[r + 1]; // MSB
+    ((UInt8 *)&result)[0] = dcache[r];     // LSB
+    ((UInt8 *)&result)[1] = dcache[r + 1]; // MSB
     return result;
 }
 static UInt8 load1(UInt32 ofs) {
   read_buf(ofs, 0);
-  return buf[ofs % 512];
+  return dcache[ofs % 512];
 }
 
 static UInt32 store4(UInt32 ofs, UInt32 val) {
@@ -410,7 +543,7 @@ static UInt32 store4(UInt32 ofs, UInt32 val) {
         // Read the nth sector and change the bytes in that sector
         UInt8 i = 0;
         for (; i < SD_BLOCK_LEN - r; i++) {
-            buf[r + i] = ((UInt8 *)&val)[i];
+            dcache[r + i] = ((UInt8 *)&val)[i];
         }
 
         // Write back to that sector
@@ -419,7 +552,7 @@ static UInt32 store4(UInt32 ofs, UInt32 val) {
         // Read the next sector and get the remaining bytes
         read_buf(ofs, 1);
         for (UInt8 j = 0; j < r - 508; j++) {
-            buf[j] = ((UInt8 *)&val)[i + j];
+            dcache[j] = ((UInt8 *)&val)[i + j];
         }
 
         // Write back to that sector
@@ -427,10 +560,10 @@ static UInt32 store4(UInt32 ofs, UInt32 val) {
         return val;
     }
 
-    buf[r]     = ((UInt8 *)&val)[0]; // LSB
-    buf[r + 1] = ((UInt8 *)&val)[1];
-    buf[r + 2] = ((UInt8 *)&val)[2];
-    buf[r + 3] = ((UInt8 *)&val)[3]; // MSB
+    dcache[r]     = ((UInt8 *)&val)[0]; // LSB
+    dcache[r + 1] = ((UInt8 *)&val)[1];
+    dcache[r + 2] = ((UInt8 *)&val)[2];
+    dcache[r + 3] = ((UInt8 *)&val)[3]; // MSB
     write_buf();
     return val;
 }
@@ -441,25 +574,25 @@ static UInt16 store2(UInt32 ofs, UInt16 val) {
 
     if (r == 511) {
         // LSB located in the nth sector
-        buf[511] = ((UInt8 *)&val)[0];
+        dcache[511] = ((UInt8 *)&val)[0];
         write_buf();
 
         // MSB located in the n + 1 sector
         read_buf(ofs, 1);
-        buf[0] = ((UInt8 *)&val)[1];
+        dcache[0] = ((UInt8 *)&val)[1];
         write_buf();
         return val;
     }
 
-    buf[r]     = ((UInt8 *)&r)[0]; // LSB
-    buf[r + 1] = ((UInt8 *)&r)[1]; // MSB
+    dcache[r]     = ((UInt8 *)&r)[0]; // LSB
+    dcache[r + 1] = ((UInt8 *)&r)[1]; // MSB
     write_buf();
     return val;
 }
 
 static UInt8 store1(UInt32 ofs, UInt8 val) {
     read_buf(ofs, 0);
-    buf[ofs % 512] = val;
+    dcache[ofs % 512] = val;
     write_buf();
     return val;
 }

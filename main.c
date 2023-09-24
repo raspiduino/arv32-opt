@@ -117,7 +117,7 @@ unsigned long millis(void) {
     ATOMIC_BLOCK(ATOMIC_FORCEON) {
         millis_return = timer1_millis;
     }
- 
+
     return millis_return;
 }
 
@@ -203,7 +203,7 @@ int main(void) {
 
             // Dump state
             dump_state();
-            UART_pputs("\r\nDump completed. Emulator will continue when B1 is set back to HIGH\r\n");
+            UART_pputs("Dump completed. Emulator will continue when B1 is set back to HIGH\r\n");
 
             // Wait until B1 is set back to HIGH
             while (!(PINB & (1 << PINB1)));
@@ -343,6 +343,7 @@ read_begin:
             while(1); // Halt
         }
 
+        _delay_ms(100);
         goto read_begin;
     }
 }
@@ -395,6 +396,7 @@ readi_begin:
             while(1); // Halt
         }
 
+        _delay_ms(100);
         goto readi_begin;
     }
 }
@@ -429,6 +431,7 @@ write_begin:
             while(1); // Halt
         }
 
+        _delay_ms(100);
         goto write_begin;
     }
 }

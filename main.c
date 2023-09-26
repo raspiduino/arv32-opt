@@ -98,6 +98,7 @@ static UInt32 HandleException( UInt32 ir, UInt32 retval );
 static UInt32 HandleControlStore( UInt32 addy, UInt32 val );
 static UInt32 HandleControlLoad( UInt32 addy );
 static void HandleOtherCSRWrite( UInt8 * image, UInt16 csrno, UInt32 value );
+static Int32 HandleOtherCSRRead( UInt8 * image, UInt16 csrno );
 
 // Load / store helper
 static UInt32 store4(UInt32 ofs, UInt32 val);
@@ -133,6 +134,7 @@ const UInt32 RAM_SIZE = 12582912UL; // Minimum RAM amount (in bytes), just teste
 #define MINIRV32_HANDLE_MEM_STORE_CONTROL( addy, val ) if( HandleControlStore( addy, val ) ) return val;
 #define MINIRV32_HANDLE_MEM_LOAD_CONTROL( addy, rval ) rval = HandleControlLoad( addy );
 #define MINIRV32_OTHERCSR_WRITE( csrno, value ) HandleOtherCSRWrite( image, csrno, value );
+#define MINIRV32_OTHERCSR_READ( csrno, value ) value = HandleOtherCSRRead( image, csrno );
 #define MINIRV32_CUSTOM_MEMORY_BUS // Custom RAM handler for swapping to SD card
 
 // Macro for accessing RAM
@@ -327,63 +329,81 @@ int main(void) {
 }
 
 // Exception handlers
-static UInt32 HandleException( UInt32 ir, UInt32 code )
+static uint32_t HandleException( uint32_t ir, uint32_t code )
 {
-    // Weird opcode emitted by duktape on exit.
-    if( code == 3 )
-    {
-        // Could handle other opcodes here.
-    }
-    return code;
+	// Weird opcode emitted by duktape on exit.
+	if( code == 3 )
+	{
+		// Could handle other opcodes here.
+	}
+	return code;
 }
 
-static UInt32 HandleControlStore( UInt32 addy, UInt32 val )
+static uint32_t HandleControlStore( uint32_t addy, uint32_t val )
 {
-    if( addy == 0x10000000 ) //UART 8250 / 16550 Data Buffer
-    {
-        UART_putc((char)val);
-    }
-    
-    return 0;
+	if( addy == 0x10000000 ) //UART 8250 / 16550 Data Buffer
+	{
+		UART_putc(val);
+	}
+	return 0;
 }
 
-static UInt32 HandleControlLoad( UInt32 addy )
+
+static uint32_t HandleControlLoad( uint32_t addy )
 {
-    // Emulating a 8250 / 16550 UART
-    if ( addy == 0x10000005 )
-        return 0x60 | UART_available();
-    else if ( addy == 0x10000000 && (UART_available()) )
-        return UART_getc();
-    return 0;
+	// Emulating a 8250 / 16550 UART
+	if( addy == 0x10000005 )
+		return 0x60 | UART_available();
+	else if( addy == 0x10000000 && UART_available() )
+		return UART_getc();
+	return 0;
 }
 
 static void HandleOtherCSRWrite( UInt8 * image, UInt16 csrno, UInt32 value )
 {
-    if( csrno == 0x136 )
-    {
-        UART_putdec32(value);
-    }
-
-    if( csrno == 0x137 )
-    {
-        UART_puthex32(value);
-    }
-
-    /*else if( csrno == 0x138 )
-    {
-        // Print "string"
-        UInt32 ptrstart = value - MINIRV32_RAM_IMAGE_OFFSET;
-        UInt32 ptrend = ptrstart;
-        if( ptrstart >= ram_amt )
-        printf( "DEBUG PASSED INVALID PTR (%08x)\n", value );
-        while( ptrend < ram_amt )
-        {
-        if( image[ptrend] == 0 ) break;
-        ptrend++;
+	if( csrno == 0x136 )
+	{
+		UART_putdec32(value);
+	}
+	if( csrno == 0x137 )
+	{
+		UART_puthex32(value);
+	}
+	else if( csrno == 0x138 )
+	{
+		//Print "string"
+		uint32_t ptrstart = value - MINIRV32_RAM_IMAGE_OFFSET;
+		uint32_t ptrend = ptrstart;
+		if( ptrstart >= RAM_SIZE ) {
+            UART_pputs( "DEBUG PASSED INVALID PTR (");
+            UART_puthex32(value);
+            UART_pputs(")\r\n");
         }
-        if( ptrend != ptrstart )
-        fwrite( image + ptrstart, ptrend - ptrstart, 1, stdout );
-    }*/
+		while( ptrend < RAM_SIZE )
+		{
+			if( load1(ptrend) == 0 ) break;
+			ptrend++;
+		}
+		if( ptrend != ptrstart ) {
+            for (; ptrstart <= ptrend; ptrstart++) {
+                UART_putc(load1(ptrstart));
+            }
+        }
+	}
+	else if( csrno == 0x139 )
+	{
+		UART_putc((UInt8)value);
+	}
+}
+
+static Int32 HandleOtherCSRRead( UInt8 * image, UInt16 csrno )
+{
+	if( csrno == 0x140 )
+	{
+		if( !UART_available() ) return -1;
+		return UART_getc();
+	}
+	return 0;
 }
 
 // Cache helper functions

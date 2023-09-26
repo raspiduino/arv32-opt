@@ -41,7 +41,7 @@ The pinout is really simple. On Arduino UNO, it should be:
 > [!WARNING]
 > You should backup all your files, since doing this SD card preperation will destroy your SD card's filesystem.
 - Then you need some tool to directly write a file to SD card. On Windows, you can use [HDD Raw Copy Tool](https://hddguru.com/software/HDD-Raw-Copy-Tool/), on *nix you can use `dd if=file.bin of=/dev/sdX conv=notrunc`.
-- Download [this](https://github.com/raspiduino/mini-rv32ima-swap/raw/main/dump.org.bin) file.
+- Download the file [`arv32.bin`](https://github.com/raspiduino/arv32-opt/raw/main/rv32.bin) file.
 - Write it directly to the SD card using the tools in step 2.
 - Now you are done preparing the card.
 

@@ -118,7 +118,7 @@ UInt32 last_cyclel = 0; // Last cyclel value
 void dump_state(void);
 
 // Config
-const UInt32 RAM_SIZE = 12582912UL; // Minimum RAM amount (in bytes), just tested (may reduce further by custom kernel)
+const UInt32 RAM_SIZE = 16777216UL; // Minimum RAM amount (in bytes), just tested (may reduce further by custom kernel)
 #define DTB_SIZE 1536               // DTB size (in bytes), must recount manually each time DTB changes
 #define INSTRS_PER_FLIP 1024        // Number of instructions executed before checking status. See loop()
 #define TIME_DIVISOR 2
@@ -233,10 +233,10 @@ int main(void) {
     init_cache(0, 0, 0xFFFF); // buf = 0x0 (code begin at 0x0)
 
     // Init cache1 as dcache
-    init_cache(1, 5656, 0); // buf = first accessed address (got by disassembly)
+    init_cache(1, 6552, 0); // buf = second accessed address (got by dumping address)
     
     // Init cache2 as dcache
-    init_cache(2, 5120, 0); // buf = second accessed address (got by disassembly)
+    init_cache(2, 3011, 0); // buf = third accessed address (got by dumping address)
 
     // Patch the ram to skip memory cleaning
     // We should patch it in the icache, not in the memory. Otherwise PC will jump to 0x0 for some reason
@@ -738,8 +738,8 @@ static UInt16 store2(UInt32 ofs, UInt16 val) {
         return val;
     }
 
-    pool[id].buf[r]     = ((UInt8 *)&r)[0]; // LSB
-    pool[id].buf[r + 1] = ((UInt8 *)&r)[1]; // MSB
+    pool[id].buf[r]     = ((UInt8 *)&val)[0]; // LSB
+    pool[id].buf[r + 1] = ((UInt8 *)&val)[1]; // MSB
     
     // Set "dirty" flag
     pool[id].flag = 1;

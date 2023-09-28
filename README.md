@@ -7,14 +7,16 @@ This is a port of [mini-rv32ima](https://github.com/cnlohr/mini-rv32ima) (a mini
 Yes you are reading it correctly, Arduino UNO can (theorically, but not practically) boot Linux. And it definitely beats [Dmitry Grinberg's (once) world's worst Linux PC](https://dmitry.gr/?r=05.Projects&proj=07.%20Linux%20on%208bit).
 
 ## How does it work?
-The idea is really simple: you have an Arduino UNO (or atmega328p) to run the emulator's logic, and emulator's RAM is accessed via swapping with an SD card (which is communicated through SPI interface, see more below).
+The idea is really simple: you have an Arduino UNO (or atmega328p) to run the emulator's logic, and emulator's RAM is accessed via swapping with an SD card (which is communicated through SPI interface, see more below). The emulator also has 3 512-bytes cache (1 icache and 2 dcache interchangable) and lazy/delayed cache write system.
 
-The code is written in pure C (and not Arduino) to reduce Arduino overhead (if any). It initializes UART, SPI, SD card, and a digital input-pullup pin for triggering emulator state dump. Finally, it initialize mini-rv32ima and let the emulator does its works.
+The code is written in pure C (and not Arduino) to reduce Arduino overhead (if any). It initializes UART, SPI, SD card, and a digital input-pullup pin for triggering emulator state dump. Finally, it initialize cache, then mini-rv32ima and let the emulator does its works.
 
 ## How fast is it?
-About ~~175Hz - 205Hz~~ 425 - 600 Hz with `-O3` code on an Arduino UNO based on atmega328p, clocked at 16MHz, with a class 4 SDHC card connected via 1-bit SPI interface. The time for fully booting Linux is estimated to be ~~`119.4` hours, or `4.96` days~~ `39.1` hours, or `1.63` day, if calculated correctly.
+About ~~175Hz - 205Hz~~ ~~426 - 600Hz~~ 600 - 700 Hz with `-O3` code on an Arduino UNO based on atmega328p, clocked at 16MHz, with a class 4 SDHC card connected via 1-bit SPI interface.
 
 Update 24/9/2023: The speed is double/tripled by implementing icache
+
+Update 26/9/2023: The speed is x1.5 by implementing 3 cache + lazy write system
 
 <br> Why it's *that* slow? Read `Current issues and drawbacks` section below.
 

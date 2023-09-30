@@ -1,5 +1,9 @@
 # arv32-opt
-[Still testing!] Atmega328p port of mini-rv32ima. Let's run Linux on the world's worst Linux PC (and beat Dmitry Grinberg)
+[Tested successfully!] Atmega328p port of mini-rv32ima. Let's run Linux on the world's worst Linux PC (and beat Dmitry Grinberg)
+
+![image](https://github.com/raspiduino/arv32-opt/assets/68118236/e457c5f7-110e-457c-ab98-48de47102af9)
+
+Note: The code is in **pure AVR C**. Arduino IDE is just used as *serial terminal*.
 
 ## What is this?
 This is a port of [mini-rv32ima](https://github.com/cnlohr/mini-rv32ima) (a minimum RISC-V emulator, capable of booting Linux) on atmega328p (the core of Arduino UNO, a 8-bit AVR microcontroller). So basically, this code is for **booting Linux on Arduino UNO**.
@@ -12,7 +16,7 @@ The idea is really simple: you have an Arduino UNO (or atmega328p) to run the em
 The code is written in pure C (and not Arduino) to reduce Arduino overhead (if any). It initializes UART, SPI, SD card, and a digital input-pullup pin for triggering emulator state dump. Finally, it initialize cache, then mini-rv32ima and let the emulator does its works.
 
 ## How fast is it?
-About ~~175Hz - 205Hz~~ ~~426 - 600Hz~~ 600 - 700 Hz with `-O3` code on an Arduino UNO based on atmega328p, clocked at 16MHz, with a class 4 SDHC card connected via 1-bit SPI interface.
+About ~~175Hz - 205Hz~~ ~~426 - 600Hz~~ most of the time 700 Hz, peak 1500Hz, lowest 70Hz with `-O3` code on an Arduino UNO based on atmega328p, clocked at 16MHz, with a class 4 SDHC card connected via 1-bit SPI interface. Complete boot time (from start to shell) is about 15 hours and 44 minutes.
 
 Update 24/9/2023: The speed is double/tripled by implementing icache
 
@@ -81,8 +85,6 @@ arv32-opt: mini-rv32ima on Arduino UNO
 SD card initialized successfully!
 ```
 
-and (optionally, but normally, if your board is fast enough) the line `Currently at 0xB8` after these 2 lines.
-
 > [!IMPORTANT]  
 > The `Preparing the SD card` section must be repeated every time you boot your emulator. Otherwise it might not boot (if Linux has initialized enough and start cleaning the memory). This might be fixed in the future.
 
@@ -91,37 +93,36 @@ and (optionally, but normally, if your board is fast enough) the line `Currently
 
 You can also dump the state of the emulator while it's running. Just connect a button to `GND` and then connect pin 9 to the button. When you click the button, state will be dump, and you should see something like this:
 ```text
-Effective emulated speed: 426 Hz, dtime=5632385ms, dcycle=2403328
-Current AVR free memory: 689 bytes
+Effective emulated speed: 1442 Hz, dtime=233596ms, dcycle=336896
+Current AVR free memory: 155 bytes
+icache hit/miss: 17931786/983542; dcache hit/miss: 4078057/1731330
 ==============================================================================
 Dumping emulator state:
 Registers x0 - x31:
-0x00000000 0x80034C74 0x8027FBF0 0x802C29D0
-0x80281340 0x000A6465 0x00006C62 0x64656C62
-0x8027FC70 0x80284E0C 0x00000000 0x802B0E80
-0x00000003 0x00000003 0x00000000 0x00000000
-0x80284E0C 0x0000FFFF 0x8027FC78 0x8027FC94
-0x00000000 0xBFFFF803 0x3FFFFFFF 0x80284E50
-0x00000003 0x802C7000 0x0000000C 0x00000058
-0x802C918C 0x802C918C 0x802C916C 0x8027FC2C
-pc: 0x80034C74
-mstatus: 0x00000000
-cyclel: 0x002BA800
+0x00000000 0x800E6B34 0x8041F7A0 0x80332FC8
+0x80420000 0x9B779A7E 0xDFB0F4A6 0x29EEBE42
+0x8041F890 0xDEC0D0A6 0x9EE3B78E 0xA125AEE8
+0x0A29015A 0x969C9575 0x31D9B5BA 0x1A086279
+0xEFA9A208 0xAF715DDD 0x10C7F938 0x42557158
+0x9A2FA369 0x6AA2616B 0x8041F8B4 0x00000000
+0x00000000 0x36AAA20D 0x4BD078AB 0x000AF715
+0x68A94F06 0x53A31796 0xF822BFDD 0x1A73C5BB
+pc: 0x800E7144
+mstatus: 0x00001880
+cyclel: 0x0120A000
 cycleh: 0x00000000
-timerl: 0x002BA400
+timerl: 0x00904E00
 timerh: 0x00000000
-timermatchl: 0x00000000
+timermatchl: 0x009050BF
 timermatchh: 0x00000000
 mscratch: 0x00000000
-mtvec: 0x80001B78
-mie: 0x00000000
+mtvec: 0x80001CBC
+mie: 0x00000088
 mip: 0x00000000
-mepc: 0x00000000
+mepc: 0x800E6640
 mtval: 0x00000000
-mcause: 0x00000000
-extraflags: 0x015873A3
-==============================================================================
-Dump completed. Emulator will continue when B1 is set back to HIGH
+mcause: 0x80000007
+extraflags: 0x019446E3
 ```
 `Effective emulated speed` is the number of instructions the emulator can execute in 1 second at that time. `dtime` is the time difference between current time and the last time you dump the status. `dcycle` is the number of cycle (instructions) excuted from the last time you dump the status until now.
 <br>`Registers x0 - x31` sections show registers from `x0` to `x31`, listed in order from left to right then from top down.

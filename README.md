@@ -3,6 +3,8 @@
 
 ![image](https://github.com/raspiduino/arv32-opt/assets/68118236/e457c5f7-110e-457c-ab98-48de47102af9)
 
+[Video on Youtube](https://youtu.be/ZzReAELagG4)
+
 Note: The code is in **pure AVR C**. Arduino IDE is just used as *serial terminal*.
 
 ## What is this?

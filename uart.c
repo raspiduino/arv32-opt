@@ -106,3 +106,20 @@ void UART_putdec32(unsigned long value) {
 
 	UART_puts(x + sizeof(x) - 2 - i);
 }
+
+void UART_puthex64(unsigned long long value) {
+    UART_pputs("0x");
+    char x[17];
+    unsigned char i, c;
+
+    x[16] = '\0';
+
+    for (i = 0; i < 16; i++) {
+        c = value & 0x0F;
+        value >>= 4;
+        c = (c >= 10) ? (c + 'A' - 10) : (c + '0');
+        x[15 - i] = c;
+    }
+
+    UART_puts(x);
+}

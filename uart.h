@@ -18,5 +18,6 @@ void UART_puts_p(const char* ps);
 unsigned char UART_available(void);
 void UART_puthex32(unsigned long value);
 void UART_putdec32(unsigned long value);
+void UART_puthex64(unsigned long long value);
 
 #endif

@@ -61,6 +61,8 @@ uint8_t SD_init()
 
     SD_readOCR(res);
 
+    SPI_init(SPI_MASTER | SPI_2X_FOSC_2 | SPI_MODE_0);
+
     return SD_SUCCESS;
 }
 

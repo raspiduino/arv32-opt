@@ -42,7 +42,7 @@
 #define CMD55_MAX_ATTEMPTS      255
 #define SD_ERROR                1
 #define SD_SUCCESS              0
-#define SD_MAX_READ_ATTEMPTS    1563
+#define SD_MAX_READ_ATTEMPTS    3907
 #define SD_READ_START_TOKEN     0xFE
 #define SD_INIT_CYCLES          80
 

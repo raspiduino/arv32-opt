@@ -1,5 +1,5 @@
 # arv32-opt
-[Tested successfully!] Atmega328p port of mini-rv32ima. Let's run Linux on the world's worst Linux PC (and beat Dmitry Grinberg)
+[Tested successfully!] Atmega328p port of mini-rv32ima. Let's run Linux on ~~the world's worst~~ one of the world's worst Linux PC (and beat Dmitry Grinberg)
 
 ![image](https://github.com/raspiduino/arv32-opt/assets/68118236/e457c5f7-110e-457c-ab98-48de47102af9)
 
@@ -7,10 +7,14 @@
 
 Note: The code is in **pure AVR C**. Arduino IDE is just used as *serial terminal*.
 
+UPDATE: I found a worse Linux PC: [C64](https://github.com/onnokort/semu-c64)!
+
 ## What is this?
 This is a port of [mini-rv32ima](https://github.com/cnlohr/mini-rv32ima) (a minimum RISC-V emulator, capable of booting Linux) on atmega328p (the core of Arduino UNO, a 8-bit AVR microcontroller). So basically, this code is for **booting Linux on Arduino UNO**.
 
 Yes you are reading it correctly, Arduino UNO can (theorically, but not practically) boot Linux. And it definitely beats [Dmitry Grinberg's (once) world's worst Linux PC](https://dmitry.gr/?r=05.Projects&proj=07.%20Linux%20on%208bit).
+
+As seen on
 
 ## How does it work?
 The idea is really simple: you have an Arduino UNO (or atmega328p) to run the emulator's logic, and emulator's RAM is accessed via swapping with an SD card (which is communicated through SPI interface, see more below). The emulator also has 3 512-bytes cache (1 icache and 2 dcache interchangable) and lazy/delayed cache write system.
@@ -18,11 +22,13 @@ The idea is really simple: you have an Arduino UNO (or atmega328p) to run the em
 The code is written in pure C (and not Arduino) to reduce Arduino overhead (if any). It initializes UART, SPI, SD card, and a digital input-pullup pin for triggering emulator state dump. Finally, it initialize cache, then mini-rv32ima and let the emulator does its works.
 
 ## How fast is it?
-About ~~175Hz - 205Hz~~ ~~426 - 600Hz~~ most of the time 700 Hz, peak 1500Hz, lowest 70Hz with `-O3` code on an Arduino UNO based on atmega328p, clocked at 16MHz, with a class 4 SDHC card connected via 1-bit SPI interface. Complete boot time (from start to shell) is about 15 hours and 44 minutes.
+About ~~175Hz - 205Hz~~ ~~426 - 600Hz~~ most of the time ~~700 Hz~~ 1100Hz, peak ~~1500Hz~~ 2000Hz, lowest 70Hz with `-O3` code on an Arduino UNO based on atmega328p, clocked at 16MHz, with a class 4 SDHC card connected via 1-bit SPI interface. **[WARNING: NOT YET UPDATED]** Complete boot time (from start to shell) is about 15 hours and 44 minutes.
 
 Update 24/9/2023: The speed is double/tripled by implementing icache
 
 Update 26/9/2023: The speed is x1.5 by implementing 3 cache + lazy write system
+
+Update 25/10/2023: SPI speed is x8, thanks to @kittennbfive's [suggestion](https://github.com/raspiduino/arv32-opt/issues/4)
 
 <br> Why it's *that* slow? Read `Current issues and drawbacks` section below.
 
@@ -148,6 +154,9 @@ extraflags: 0x019446E3
 - [ryanj1234](https://github.com/ryanj1234) for writing [SD_TUTORIAL_PART4](https://github.com/ryanj1234/SD_TUTORIAL_PART4).
 - [adnbr](https://github.com/adnbr/) for writing [1 ms counter](https://gist.github.com/adnbr/2439125)
 - [me (gvl610/raspiduino)](https://github.com/raspiduino) for bringing all this stuff together.
+
+## As seen on
+[Hackaday](https://hackaday.com/2023/10/13/because-you-can-linux-on-an-arduino-uno/), [Hackster](https://www.hackster.io/news/giang-vinh-loc-creates-the-world-s-worst-linux-pc-using-an-arduino-uno-r3-and-its-atmega328p-e5ed03e3f594), [Habr](https://habr.com/ru/news/767550/), [Maker News](https://news.mkme.org/?p=66623), [internetua](https://internetua.com/entuziast-zapustiv-linux-na-arduino-uno), [futuranet.it](https://ei.futuranet.it/2023/10/24/arduino-uno-linux-su-atmega328/), [zhihu.com](https://zhuanlan.zhihu.com/p/662411944), [tuxmachines.org](https://news.tuxmachines.org/n/2023/10/14/Because_You_Can_Linux_On_An_Arduino_Uno.shtml), [arduino.cc forum](https://forum.arduino.cc/t/ot-linux-auf-nem-uno-wie-kommt-man-auf-solche-ideen/1178341/14), [sohu.com](https://www.sohu.com/a/729847177_256585?scm=1101.topic:90189:110070.0.1.0&spm=smpc.topic_229.block2_218_tI4wzp_1_fd.1.1699030935985ig99qAS_90189)
 
 ## One last thing
 If you can run this, you probably are running world's worst Linux PC. Enjoy!

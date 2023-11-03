@@ -14,8 +14,6 @@ This is a port of [mini-rv32ima](https://github.com/cnlohr/mini-rv32ima) (a mini
 
 Yes you are reading it correctly, Arduino UNO can (theorically, but not practically) boot Linux. And it definitely beats [Dmitry Grinberg's (once) world's worst Linux PC](https://dmitry.gr/?r=05.Projects&proj=07.%20Linux%20on%208bit).
 
-As seen on
-
 ## How does it work?
 The idea is really simple: you have an Arduino UNO (or atmega328p) to run the emulator's logic, and emulator's RAM is accessed via swapping with an SD card (which is communicated through SPI interface, see more below). The emulator also has 3 512-bytes cache (1 icache and 2 dcache interchangable) and lazy/delayed cache write system.
 

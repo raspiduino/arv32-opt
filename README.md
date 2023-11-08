@@ -49,7 +49,7 @@ The pinout is really simple. On Arduino UNO, it should be:
 
 ## Usage
 ### Preparing the SD card
-- First, you will need an SD card. Any type larger than 12MB.
+- First, you will need an SD card. Any type larger than 16MB.
 > [!WARNING]
 > You should backup all your files, since doing this SD card preparation will destroy your SD card's filesystem.
 - Then you need some tool to directly write a file to SD card. On Windows, you can use [HDD Raw Copy Tool](https://hddguru.com/software/HDD-Raw-Copy-Tool/), on *nix you can use `dd if=file.bin of=/dev/sdX conv=notrunc`.

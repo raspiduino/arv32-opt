@@ -17,8 +17,8 @@ void SPI_init(uint16_t initParams)
     DDR_SPI |= (1 << MISO);
 
     // set SPI params
-    SPCR |= ((uint8_t) (initParams >> 8)) | (1 << SPE);
-    SPSR |= ((uint8_t) initParams);
+    SPCR = ((uint8_t) (initParams >> 8)) | (1 << SPE);
+    SPSR = ((uint8_t) initParams);
 }
 
 uint8_t SPI_transfer(uint8_t data)

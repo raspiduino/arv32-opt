@@ -1,0 +1,51 @@
+   1               		.file	"spi.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__RAMPZ__ = 0x3b
+   6               	__tmp_reg__ = 0
+   7               	__zero_reg__ = 1
+   8               		.text
+   9               	.global	SPI_init
+  11               	SPI_init:
+  12               	/* prologue: function */
+  13               	/* frame size = 0 */
+  14               	/* stack size = 0 */
+  15               	.L__stack_usage = 0
+  16 0000 24B1      		in r18,0x4
+  17 0002 2C62      		ori r18,lo8(44)
+  18 0004 24B9      		out 0x4,r18
+  19 0006 249A      		sbi 0x4,4
+  20 0008 9064      		ori r25,lo8(64)
+  21 000a 9CBD      		out 0x2c,r25
+  22 000c 8DBD      		out 0x2d,r24
+  23               	/* epilogue start */
+  24 000e 0895      		ret
+  26               	.global	SPI_transfer
+  28               	SPI_transfer:
+  29               	/* prologue: function */
+  30               	/* frame size = 0 */
+  31               	/* stack size = 0 */
+  32               	.L__stack_usage = 0
+  33 0010 8EBD      		out 0x2e,r24
+  34               	.L4:
+  35 0012 0DB4      		in __tmp_reg__,0x2d
+  36 0014 07FE      		sbrs __tmp_reg__,7
+  37 0016 00C0      		rjmp .L4
+  38 0018 8EB5      		in r24,0x2e
+  39               	/* epilogue start */
+  40 001a 0895      		ret
+  42               		.ident	"GCC: (GNU) 13.2.0"
+DEFINED SYMBOLS
+                            *ABS*:00000000 spi.c
+     /tmp/ccntppSH.s:2      *ABS*:0000003e __SP_H__
+     /tmp/ccntppSH.s:3      *ABS*:0000003d __SP_L__
+     /tmp/ccntppSH.s:4      *ABS*:0000003f __SREG__
+     /tmp/ccntppSH.s:5      *ABS*:0000003b __RAMPZ__
+     /tmp/ccntppSH.s:6      *ABS*:00000000 __tmp_reg__
+     /tmp/ccntppSH.s:7      *ABS*:00000001 __zero_reg__
+     /tmp/ccntppSH.s:11     .text:00000000 SPI_init
+     /tmp/ccntppSH.s:28     .text:00000010 SPI_transfer
+     /tmp/ccntppSH.s:34     .text:00000012 .L4
+
+NO UNDEFINED SYMBOLS

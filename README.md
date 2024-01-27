@@ -81,7 +81,7 @@ avr-size -A -d main.elf
 > If you build for another AVR microcontroller, or if you use different clock speed, please change the `-mmcu=atmega328p` and `-DF_CPU=16000000UL` options to match your situation.
 
 > [!NOTE]  
-> Windows users can refer to the script `build.bat` in this repo. Just change the path to your correct path and it will work. Linux users can use the script `build.sh`.
+> Windows users can refer to the script `build.bat` in this repo. Linux users can use the script `build.sh`.
 
 ### Usage
 After completing 2 sections above, you are now ready to boot Linux on Arduino UNO. Just connect the SD card to Arduino UNO, insert the card in, then power the Arduino on. Open a serial connection at baudrate 9600 bps to connect.

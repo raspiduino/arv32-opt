@@ -559,7 +559,11 @@ static UInt32 loadi(UInt32 ofs) {
     UInt16 r = ofs % 512;
     UInt8 id = read_buf(ofs, 2);
 
-    if (r >= 509) {
+    // This will never happend, since RISC-V instructions are aligned on 32-bit boundaries,
+    // so they will probably never split between 512-bytes sectors.
+    // Removing this saves about 4 instructions in each loadi execution, and even more when
+    // considering the programming space. How much will this boost the performance?
+    /*if (r >= 509) {
         // 1 - 3 bytes are in nth sector, and the others in n + 1 sector
         // Read the nth sector and get the bytes in that sector
         UInt8 i = 0;
@@ -573,11 +577,11 @@ static UInt32 loadi(UInt32 ofs) {
             ((UInt8 *)&result)[i + j] = pool[id].buf[j];
         }
 
-        UART_puthex32(result);
-        UART_pputs("\r\n");
+        //UART_puthex32(result);
+        //UART_pputs("\r\n");
 
         return result;
-    }
+    }*/
 
     ((UInt8 *)&result)[0] = pool[id].buf[r];     // LSB
     ((UInt8 *)&result)[1] = pool[id].buf[r + 1];

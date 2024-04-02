@@ -602,11 +602,12 @@ void addage(UInt8 id, UInt8 score) {
 }
 
 static UInt32 load4(UInt32 ofs) {
-    //UInt32 result;
     UInt16 r = ofs % 512; // Don't inline this
     UInt8 id = read_buf(ofs, 0);
 
     if (r >= 509) {
+        UInt32 result;
+
         // 1 - 3 bytes are in nth sector, and the others in n + 1 sector
         // Read the nth sector and get the bytes in that sector
         UInt8 i = 0;
@@ -644,11 +645,12 @@ static UInt32 load4(UInt32 ofs) {
     return *(UInt32*)&pool[id].buf[r];
 }
 static UInt16 load2(UInt32 ofs) {
-    //UInt16 result;
     UInt16 r = ofs % 512;
     UInt8 id = read_buf(ofs, 0);
 
     if (r == 511) {
+	    UInt16 result;
+
         // LSB located in nth sector
         ((UInt8 *)&result)[0] = pool[id].buf[511];
 

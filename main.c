@@ -555,8 +555,7 @@ cache_read:
 // Memory access functions
 static UInt32 loadi(UInt32 ofs) {
     // Load instruction from icache
-    UInt32 result;
-    UInt16 r = ofs % 512;
+    //UInt32 result;
     UInt8 id = read_buf(ofs, 2);
 
     // This will never happend, since RISC-V instructions are aligned on 32-bit boundaries,
@@ -583,13 +582,17 @@ static UInt32 loadi(UInt32 ofs) {
         return result;
     }*/
 
-    ((UInt8 *)&result)[0] = pool[id].buf[r];     // LSB
+    /*((UInt8 *)&result)[0] = pool[id].buf[r];     // LSB
     ((UInt8 *)&result)[1] = pool[id].buf[r + 1];
     ((UInt8 *)&result)[2] = pool[id].buf[r + 2];
     ((UInt8 *)&result)[3] = pool[id].buf[r + 3]; // MSB
 
     // Return result
-    return result;
+    return result;*/
+
+    // Return result
+    // ofs % 512 needs to be cast to uint16_t, or more instructions will be generated
+    return *(UInt32*)&pool[id].buf[(UInt16)(ofs % 512)];
 }
 
 void addage(UInt8 id, UInt8 score) {
@@ -599,8 +602,8 @@ void addage(UInt8 id, UInt8 score) {
 }
 
 static UInt32 load4(UInt32 ofs) {
-    UInt32 result;
-    UInt16 r = ofs % 512;
+    //UInt32 result;
+    UInt16 r = ofs % 512; // Don't inline this
     UInt8 id = read_buf(ofs, 0);
 
     if (r >= 509) {
@@ -623,7 +626,7 @@ static UInt32 load4(UInt32 ofs) {
         return result;
     }
 
-    ((UInt8 *)&result)[0] = pool[id].buf[r];     // LSB
+    /*((UInt8 *)&result)[0] = pool[id].buf[r];     // LSB
     ((UInt8 *)&result)[1] = pool[id].buf[r + 1];
     ((UInt8 *)&result)[2] = pool[id].buf[r + 2];
     ((UInt8 *)&result)[3] = pool[id].buf[r + 3]; // MSB
@@ -632,10 +635,16 @@ static UInt32 load4(UInt32 ofs) {
     addage(id, 2);
 
     // Return result
-    return result;
+    return result;*/
+
+    // Increase age score
+    addage(id, 2);
+
+    // Return result
+    return *(UInt32*)&pool[id].buf[r];
 }
 static UInt16 load2(UInt32 ofs) {
-    UInt16 result;
+    //UInt16 result;
     UInt16 r = ofs % 512;
     UInt8 id = read_buf(ofs, 0);
 
@@ -653,14 +662,20 @@ static UInt16 load2(UInt32 ofs) {
         return result;
     }
 
-    ((UInt8 *)&result)[0] = pool[id].buf[r];     // LSB
+    /*((UInt8 *)&result)[0] = pool[id].buf[r];     // LSB
     ((UInt8 *)&result)[1] = pool[id].buf[r + 1]; // MSB
     
     // Increase age score
     addage(id, 2);
 
     // Return result
-    return result;
+    return result;*/
+
+    // Increase age score
+    addage(id, 2);
+
+    // Return result
+    return *(UInt16 *)&pool[id].buf[r];
 }
 static UInt8 load1(UInt32 ofs) {
     UInt8 id = read_buf(ofs, 0);
@@ -668,7 +683,8 @@ static UInt8 load1(UInt32 ofs) {
     // Increase age score
     addage(id, 2);
 
-    return pool[id].buf[ofs % 512];
+    // ofs % 512 needs to be cast to uint16_t, or more instructions will be generated
+    return pool[id].buf[(UInt16)(ofs % 512)];
 }
 
 static UInt32 store4(UInt32 ofs, UInt32 val) {
@@ -702,11 +718,14 @@ static UInt32 store4(UInt32 ofs, UInt32 val) {
         return val;
     }
 
-    pool[id].buf[r]     = ((UInt8 *)&val)[0]; // LSB
+    /*pool[id].buf[r]     = ((UInt8 *)&val)[0]; // LSB
     pool[id].buf[r + 1] = ((UInt8 *)&val)[1];
     pool[id].buf[r + 2] = ((UInt8 *)&val)[2];
-    pool[id].buf[r + 3] = ((UInt8 *)&val)[3]; // MSB
-    
+    pool[id].buf[r + 3] = ((UInt8 *)&val)[3]; // MSB*/
+
+    // Store
+    *(UInt32 *)&pool[id].buf[r] = val;
+
     // Set "dirty" flag
     pool[id].flag = 1;
 
@@ -742,8 +761,11 @@ static UInt16 store2(UInt32 ofs, UInt16 val) {
         return val;
     }
 
-    pool[id].buf[r]     = ((UInt8 *)&val)[0]; // LSB
-    pool[id].buf[r + 1] = ((UInt8 *)&val)[1]; // MSB
+    /*pool[id].buf[r]     = ((UInt8 *)&val)[0]; // LSB
+    pool[id].buf[r + 1] = ((UInt8 *)&val)[1]; // MSB*/
+
+    // Store
+    *(UInt16 *)&pool[id].buf[r] = val;
     
     // Set "dirty" flag
     pool[id].flag = 1;
@@ -757,7 +779,10 @@ static UInt16 store2(UInt32 ofs, UInt16 val) {
 
 static UInt8 store1(UInt32 ofs, UInt8 val) {
     UInt8 id = read_buf(ofs, 0);
-    pool[id].buf[ofs % 512] = val;
+
+    // Store
+    // ofs % 512 needs to be cast to uint16_t, or more instructions will be generated
+    pool[id].buf[(UInt16)(ofs % 512)] = val;
     
     // Set "dirty" flag
     pool[id].flag = 1;

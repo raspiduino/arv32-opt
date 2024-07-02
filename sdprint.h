@@ -1,7 +1,9 @@
 #ifndef __SD_PRINT_H__
 #define __SD_PRINT_H__
 
+#ifdef __AVR__
 #include <avr/io.h>
+#endif
 
 /* R1 MACROS */
 #define PARAM_ERROR(X)      X & 0b01000000

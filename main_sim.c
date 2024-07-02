@@ -2,44 +2,22 @@
  * arv32-opt: mini-rv32ima on Arduino UNO, but the code is written in pure C
  * Created by gvl610
  * mini-rv32ima is created by cnlohr. See https://github.com/cnlohr/mini-rv32ima
- * UART, SPI, and SD code is created by ryanj1234. See https://github.com/ryanj1234/SD_TUTORIAL_PART4
+ * This is computer-simulated version of arv32-opt for debugging and testing new optimizations
  */
-
-/*
- * Pinout on Arduino UNO:
- *  SD       Arduino UNO
- *  CS           10
- * MOSI          11
- * MISO          12
- * SCLK          13
- *
- * You can change the CS pin by modifying spi.h
- */
-
-// Frequency that atmega328p is running on. Default is 16MHz on Arduino UNO board
-#ifndef F_CPU
-#define F_CPU 16000000UL
-#endif
-
-// UART baudrate. Default is 9600
-#define BAUD_RATE 9600
 
 // Enable/disable cache hit/miss information
 #define ENABLE_CACHE_STAT
 
 // Headers
-#include <avr/io.h>
-#include <util/delay.h>
-#include <avr/pgmspace.h>
-#include <avr/interrupt.h>
-#include <util/atomic.h>
-#include <stdlib.h>
-#include <string.h>
+#include <time.h>
+#include "if_sim.h"
 #include "uart.h"
 #include "spi.h"
 #include "sdcard.h"
 #include "sdprint.h"
 #include "types.h"
+
+#define UART_pputs UART_puts
 
 // mini-rv32ima variables
 int fail_on_all_faults = 0;
@@ -77,51 +55,43 @@ struct MiniRV32IMAState *core;
  */
 
 struct cache {
-    UInt8 buf[SD_BLOCK_LEN];
-    UInt32 tag;
+    uint8_t buf[SD_BLOCK_LEN];
+    uint32_t tag;
     uint16_t age;
-    UInt8 flag;
+    uint8_t flag;
 };
 
 struct cache pool[3];
 
 // Cache hit / miss stat
 #ifdef ENABLE_CACHE_STAT
-UInt32 icache_hit = 0;
-UInt32 icache_miss = 0;
-UInt32 dcache_hit = 0;
-UInt32 dcache_miss = 0;
+uint32_t icache_hit = 0;
+uint32_t icache_miss = 0;
+uint32_t dcache_hit = 0;
+uint32_t dcache_miss = 0;
 #endif
 
 // Functions prototype
-static UInt32 HandleException( UInt32 ir, UInt32 retval );
-static UInt32 HandleControlStore( UInt32 addy, UInt32 val );
-static UInt32 HandleControlLoad( UInt32 addy );
-static void HandleOtherCSRWrite( UInt8 * image, UInt16 csrno, UInt32 value );
-static Int32 HandleOtherCSRRead( UInt8 * image, UInt16 csrno );
+static uint32_t HandleException( uint32_t ir, uint32_t retval );
+static uint32_t HandleControlStore( uint32_t addy, uint32_t val );
+static uint32_t HandleControlLoad( uint32_t addy );
+static void HandleOtherCSRWrite( uint8_t * image, uint16_t csrno, uint32_t value );
+static int32_t HandleOtherCSRRead( uint8_t * image, uint16_t csrno );
 
 // Load / store helper
-static UInt32 store4(UInt32 ofs, UInt32 val);
-static UInt16 store2(UInt32 ofs, UInt16 val);
-static UInt8 store1(UInt32 ofs, UInt8 val);
+static uint32_t store4(uint32_t ofs, uint32_t val);
+static uint16_t store2(uint32_t ofs, uint16_t val);
+static uint8_t store1(uint32_t ofs, uint8_t val);
 
-static UInt32 load4(UInt32 ofs);
-static UInt16 load2(UInt32 ofs);
-static UInt8 load1(UInt32 ofs);
+static uint32_t load4(uint32_t ofs);
+static uint16_t load2(uint32_t ofs);
+static uint8_t load1(uint32_t ofs);
 
-static UInt32 loadi(UInt32 ofs);
+static uint32_t loadi(uint32_t ofs);
 
 // Other
-extern int __heap_start;
-extern int *__brkval;
-UInt32 last_cyclel = 0; // Last cyclel value
+uint32_t last_cyclel = 0; // Last cyclel value
 void dump_state(void);
-
-// Config
-const UInt32 RAM_SIZE = 16777216UL; // Minimum RAM amount (in bytes), just tested (may reduce further by custom kernel)
-#define DTB_SIZE 1536               // DTB size (in bytes), must recount manually each time DTB changes
-#define INSTRS_PER_FLIP 1024        // Number of instructions executed before checking status. See loop()
-#define TIME_DIVISOR 2
 
 // Setup mini-rv32ima
 // This is the functionality we want to override in the emulator.
@@ -142,37 +112,18 @@ const UInt32 RAM_SIZE = 16777216UL; // Minimum RAM amount (in bytes), just teste
 #define MINIRV32_STORE2( ofs, val ) store2(ofs, val)
 #define MINIRV32_STORE1( ofs, val ) store1(ofs, val)
 #define MINIRV32_LOAD4( ofs ) load4(ofs)
-#define MINIRV32_LOAD2_SIGNED( ofs ) (Int8)load2(ofs)
+#define MINIRV32_LOAD2_SIGNED( ofs ) (int8_t)load2(ofs)
 #define MINIRV32_LOAD2( ofs ) load2(ofs)
-#define MINIRV32_LOAD1_SIGNED( ofs ) (Int8)load1(ofs)
+#define MINIRV32_LOAD1_SIGNED( ofs ) (int8_t)load1(ofs)
 #define MINIRV32_LOAD1( ofs ) load1(ofs)
 #define MINIRV32_LOADI( ofs ) loadi(ofs)
 
 #include "mini-rv32ima.h"
 
-// millis implementation from https://gist.github.com/adnbr/2439125
-volatile unsigned long timer1_millis;
-unsigned long last_ms = 0;
- 
-ISR (TIMER1_COMPA_vect) {
-    timer1_millis++;
-}
-
-unsigned long millis(void) {
-    unsigned long millis_return;
-
-    // Ensure this cannot be disrupted
-    ATOMIC_BLOCK(ATOMIC_FORCEON) {
-        millis_return = timer1_millis;
-    }
-
-    return millis_return;
-}
-
 // Init cache helper
-void init_cache(UInt8 index, UInt32 tag, uint16_t age) {
-    UInt8 token;
-    UInt8 t = 0;
+void init_cache(uint8_t index, uint32_t tag, uint16_t age) {
+    uint8_t token;
+    uint8_t t = 0;
 
     // Read init sector
 read_init_begin:
@@ -198,10 +149,44 @@ read_init_begin:
     pool[index].flag = 0;
 }
 
+#include <signal.h>
+
+clock_t last_ms;
+static void CtrlC()
+{
+	// Calculate effective emulated speed
+    clock_t current_ms = clock();
+    UART_pputs("Effective emulated speed: ");
+    UART_putdec32(((core->cyclel - last_cyclel) * 1000) / (current_ms - last_ms) * 1000);
+    UART_pputs(" Hz, dtime=");
+    UART_putdec32((current_ms - last_ms) / 1000);
+    UART_pputs("ms, dcycle=");
+    UART_putdec32(core->cyclel - last_cyclel);
+    UART_pputs("\r\n");
+
+    // Print icache/dcache hit/miss
+#ifdef ENABLE_CACHE_STAT
+    UART_pputs("icache hit/miss: ");
+    UART_putdec32(icache_hit);
+    UART_pputs("/");
+    UART_putdec32(icache_miss);
+    UART_pputs("; dcache hit/miss: ");
+    UART_putdec32(dcache_hit);
+    UART_pputs("/");
+    UART_putdec32(dcache_miss);
+    UART_pputs("\r\n");
+#endif
+    // Dump state
+    dump_state();
+    UART_pputs("Dump completed.\r\n");
+	exit( 0 );
+}
+
 // Entry point
-int main(void) {
+int main(int argc, char** argv) {
     // Initialize UART
     UART_init();
+    signal(SIGINT, CtrlC);
 
     // Say something, so people know that UART works
     UART_pputs("arv32-opt: mini-rv32ima on Arduino UNO\r\n");
@@ -246,69 +231,15 @@ int main(void) {
     // This works by changing BGE (branch greater or equal) to BLT (branch less than)
     pool[0].buf[0xAD] = 0xC8;
 
-    // Set digital pin 9 to input pullup, see loop
-    PORTB |= (1 << PINB1);
-
-    // Init timer (from https://gist.github.com/adnbr/2439125)
-    TCCR1B |= (1 << WGM12) | (1 << CS11); // CTC mode, Clock/8
-    OCR1AH = 7; // Load the high byte of 2000
-    OCR1AL = 208; // then the low byte into the output compare
-    TIMSK1 |= (1 << OCIE1A); // Enable the compare match interrupt
-    sei(); // Now enable global interrupts
-
-    // Print current free memory
-    UART_pputs("Current AVR free memory: ");
-    UART_putdec32((int) SP - (__brkval == 0 ? (int) &__heap_start : (int) __brkval));
-    UART_pputs(" bytes\r\n");
+    // Initial time
+    last_ms = clock();
 
     // Emulator loop
     // It's stated in the AVR documentation that writing do ... while() is faster than while()
     do {
-        // Print processor state if requested by user
-        if (!(PINB & (1 << PINB1))) {
-            // Calculate effective emulated speed
-            unsigned long current_ms = millis();
-            UART_pputs("Effective emulated speed: ");
-            UART_putdec32(((core->cyclel - last_cyclel) * 1000) / (current_ms - last_ms));
-            UART_pputs(" Hz, dtime=");
-            UART_putdec32(current_ms - last_ms);
-            UART_pputs("ms, dcycle=");
-            UART_putdec32(core->cyclel - last_cyclel);
-            UART_pputs("\r\n");
-
-            // Print current free memory
-            UART_pputs("Current AVR free memory: ");
-            UART_putdec32((int) SP - (__brkval == 0 ? (int) &__heap_start : (int) __brkval));
-            UART_pputs(" bytes\r\n");
-
-            // Print icache/dcache hit/miss
-#ifdef ENABLE_CACHE_STAT
-            UART_pputs("icache hit/miss: ");
-            UART_putdec32(icache_hit);
-            UART_pputs("/");
-            UART_putdec32(icache_miss);
-            UART_pputs("; dcache hit/miss: ");
-            UART_putdec32(dcache_hit);
-            UART_pputs("/");
-            UART_putdec32(dcache_miss);
-            UART_pputs("\r\n");
-#endif
-            // Dump state
-            dump_state();
-            UART_pputs("Dump completed. Emulator will continue when B1 is set back to HIGH\r\n");
-
-            // Wait until B1 is set back to HIGH
-            while (!(PINB & (1 << PINB1)));
-            UART_pputs("B1 is set to HIGH, emulator resume\r\n");
-            
-            // Reset counters
-            last_cyclel = core->cyclel;
-            last_ms = millis();
-        }
-
         // Calculate pseudo time
         uint64_t * this_ccount = ((uint64_t*)&core->cyclel);
-        UInt32 elapsedUs = 0;
+        uint32_t elapsedUs = 0;
         elapsedUs = *this_ccount / TIME_DIVISOR - lastTime;
         lastTime += elapsedUs;
 
@@ -324,8 +255,7 @@ int main(void) {
         }
     } while (1);
 
-    // Should not get here
-    while(1);
+    return 0;
 }
 
 // Exception handlers
@@ -359,7 +289,7 @@ static uint32_t HandleControlLoad( uint32_t addy )
 	return 0;
 }
 
-static void HandleOtherCSRWrite( UInt8 * image, UInt16 csrno, UInt32 value )
+static void HandleOtherCSRWrite( uint8_t * image, uint16_t csrno, uint32_t value )
 {
 	if( csrno == 0x136 )
 	{
@@ -392,11 +322,11 @@ static void HandleOtherCSRWrite( UInt8 * image, UInt16 csrno, UInt32 value )
 	}
 	else if( csrno == 0x139 )
 	{
-		UART_putc((UInt8)value);
+		UART_putc((uint8_t)value);
 	}
 }
 
-static Int32 HandleOtherCSRRead( UInt8 * image, UInt16 csrno )
+static int32_t HandleOtherCSRRead( uint8_t * image, uint16_t csrno )
 {
 	if( csrno == 0x140 )
 	{

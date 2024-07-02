@@ -8,6 +8,7 @@
         Updated initialization function
 *******************************************************************************/
 
+#ifdef __AVR__
 // pin definitions
 #define DDR_SPI             DDRB
 #define PORT_SPI            PORTB
@@ -19,6 +20,7 @@
 // macros
 #define CS_ENABLE()         PORT_SPI &= ~(1 << CS)
 #define CS_DISABLE()        PORT_SPI |= (1 << CS)
+#endif
 
 // initialization definitions
 #define SPI_MASTER          0b0001000000000000

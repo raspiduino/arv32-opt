@@ -34,6 +34,7 @@
 #include <avr/interrupt.h>
 #include <util/atomic.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include "uart.h"
 #include "spi.h"
@@ -55,8 +56,8 @@ struct MiniRV32IMAState *core;
  *
  * Each cache has a 512 bytes buffer, a tag (the sector number of that 512-bytes
  * block in RAM), and a "dirty" flag (see below). In our implementation, we use
- * an uint16_t age score variables. For each data read, we will +2 to the age
- * score, and for each data write, we will +1 to the age score.
+ * an uint16_t age score variables. For each data read, we will +1 to the age
+ * score, and for each data write, we will also +1 to the age score.
  *
  * Cache will be invaild by LRU mechanism: when there is a read/write request to
  * an address that is not currently in the cache pool, a least recently used
@@ -74,13 +75,16 @@ struct MiniRV32IMAState *core;
  * icache, it will get invalid, and its age score will be reset to 0. If pc
  * moves to an address that is currently in another dcache, that dcache will
  * be used for both icache and dcache, and its age score will be set to 0xFFFF.
+ *
+ * IMO, I don't think a cache will often be assigned as both icache and dcache
+ * as the same time. It might just happend in self-modifying code.
  */
 
 struct cache {
-    UInt8 buf[SD_BLOCK_LEN];
-    UInt32 tag;
+    uint8_t buf[SD_BLOCK_LEN];
+    uint32_t tag;
     uint16_t age;
-    UInt8 flag;
+    bool flag; // False is dirty. Why not the opposite? AVR takes 2 instructions to store a 1 and just 1 to store a 0.
 };
 
 struct cache pool[3];
@@ -410,58 +414,76 @@ static Int32 HandleOtherCSRRead( UInt8 * image, UInt16 csrno )
 
 /*
  * flag:
- * 0 -> data fetch, calculate sector
- * 1 -> data fetch, next sector
- * 2 -> instruction fetch, calculate sector
- * 3 -> instruction fetch, next sector
+ * false -> data fetch, calculate sector
+ * true -> instruction fetch, calculate sector
+ *
+ * return: cache buffer's address
+ *
+ * quick note: storing a 0 takes just a single instruction, but storing a 1 takes 2 on AVR
  */
 
-uint8_t read_buf(uint32_t ofs, uint8_t flag) {
-    static uint32_t s;
-
-    /*
-     * Some operations might involve read/write bytes that are located between 2 sectors on
-     * the SD card. In that case, we have to fetch 2 continuous sectors at a time. Since
-     * we already know the last sector number, we can just read the n + 1 sector and skip
-     * the division (which is a pain on AVR). The flag parameter is used for this. When
-     * flag is 0, we will calculate the sector number. Else, we will just fetch the n + 1
-     * sector.
-     */
-    if (flag % 2 == 0) {
-        // Calculate sector num
-        // Dividing on AVR is a pain, so we should avoid that if we can
-        s = ofs / SD_BLOCK_LEN;
-    } else {
-        // sector num = last sector + 1
-        ++s;
-    }
+uint8_t *read_buf(uint32_t ofs, bool flag, bool write) {
+    // Calculate sector num
+    // Dividing on AVR is a pain, so we should avoid that if we can
+    uint32_t s = ofs / SD_BLOCK_LEN;
 
     // Check if the requested sector exists in the pool
     // We have 3 caches, so we can use if. If you implement more than 3 caches, you should
     // use for loop
     uint8_t ret = 0;
-    if (s == pool[2].tag) {
-        ret = 2;
+    if (s == pool[0].tag) {
+        ret = 0;
+        
+        // Add age
+        if (pool[0].age <= 0xFFFE) {
+            pool[0].age += 1;
+        }
+
+        // Set dirty flag if needed
+        if (write) {
+            pool[0].flag = false; // false = dirty
+        }
     } else if (s == pool[1].tag) {
         ret = 1;
-    } else if (s == pool[0].tag) {
-        ret = 0;
+        
+        // Add age
+        if (pool[1].age <= 0xFFFE) {
+            pool[1].age += 1;
+        }
+
+        // Set dirty flag if needed
+        if (write) {
+            pool[1].flag = false;
+        }
+    } else if (s == pool[2].tag) {
+        ret = 2;
+
+        // Add age
+        if (pool[2].age <= 0xFFFE) {
+            pool[2].age += 1;
+        }
+
+        // Set dirty flag if needed
+        // If you think this can be optimized to pool[2].flag = write, think again!
+        if (write) {
+            pool[2].flag = false;
+        }
     } else {
         uint8_t lru = 2;
-        
-        if (flag > 1) {
+
+        if (flag) {
             // If icache miss -> invaild old icache
             if (pool[0].age == 0xFFFF) {
-                pool[0].age = 0;
                 lru = 0;
+                pool[0].age = 0;
                 goto continue_without_finding_lru;
             } else if (pool[1].age == 0xFFFF) {
-                pool[1].age = 0;
                 lru = 1;
+                pool[1].age = 0;
                 goto continue_without_finding_lru;
             } else {
-                pool[2].age = 0;
                 lru = 2;
+                pool[2].age = 0;
                 goto continue_without_finding_lru;
             }
         }
@@ -479,7 +501,7 @@ uint8_t read_buf(uint32_t ofs, uint8_t flag) {
 continue_without_finding_lru:
         // Check if LRU cache if dirty
         uint8_t token;
-        if (pool[lru].flag == 1) {
+        if (!pool[lru].flag) { // false = dirty
             // Dirty -> flush to SD
             uint8_t t = 0;
 cache_write:
@@ -503,12 +525,12 @@ cache_write:
             }
 
             // Clear dirty flag
-            pool[lru].flag = 0;
+            pool[lru].flag = true; // true = not dirty
         }
 
         // Set new properties
         pool[lru].tag = s;
-        if (flag > 1) {
+        if (flag) {
             // icache
             pool[lru].age = 0xFFFF;
 #ifdef ENABLE_CACHE_STAT
@@ -516,10 +538,15 @@ cache_write:
 #endif
         } else {
             // dcache
-            pool[lru].age = 0;
+            pool[lru].age = 1; // Already +1 for the access
 #ifdef ENABLE_CACHE_STAT
             dcache_miss++;
 #endif
+        }
+
+        // Set dirty flag if needed
+        if (write) {
+            pool[lru].flag = false;
         }
         
         // Fetch new sector into cache
@@ -543,207 +570,53 @@ cache_read:
             }
         }
 
-        // Return the cache index
-        return lru;
+        // Return buffer address
+        return &pool[lru].buf;
     }
 
     // Cache hit
 #ifdef ENABLE_CACHE_STAT
-    if (flag > 1) {
+    if (flag) {
         icache_hit++;
     } else {
         dcache_hit++;
     }
 #endif
 
-    // Return the cache index
-    return ret;
+    // Return buffer address
+    return &pool[ret].buf;
 }
 
 // Memory access functions
 static uint32_t loadi(uint32_t ofs) {
     // Load instruction from icache
-    //uint32_t result;
-    uint8_t id = read_buf(ofs, 2);
-
-    // This will never happend, since RISC-V instructions are aligned on 32-bit boundaries,
-    // so they will probably never split between 512-bytes sectors.
-    // Removing this saves about 4 instructions in each loadi execution, and even more when
-    // considering the programming space. How much will this boost the performance?
-    /*if (r >= 509) {
-        // 1 - 3 bytes are in nth sector, and the others in n + 1 sector
-        // Read the nth sector and get the bytes in that sector
-        uint8_t i = 0;
-        for (; i < SD_BLOCK_LEN - r; i++) {
-            ((uint8_t *)&result)[i] = pool[id].buf[r + i];
-        }
-
-        // Read the next sector and get the remaining bytes
-        id = read_buf(ofs, 3);
-        for (uint8_t j = 0; j < r - 508; j++) {
-            ((uint8_t *)&result)[i + j] = pool[id].buf[j];
-        }
-
-        //UART_puthex32(result);
-        //UART_pputs("\r\n");
-
-        return result;
-    }*/
-
-    /*((uint8_t *)&result)[0] = pool[id].buf[r];     // LSB
-    ((uint8_t *)&result)[1] = pool[id].buf[r + 1];
-    ((uint8_t *)&result)[2] = pool[id].buf[r + 2];
-    ((uint8_t *)&result)[3] = pool[id].buf[r + 3]; // MSB
-
-    // Return result
-    return result;*/
-
-    // Return result
-    // ofs % 512 needs to be cast to uint16_t, or more instructions will be generated
-    return *(uint32_t*)&pool[id].buf[(uint16_t)(ofs % 512)];
-}
-
-void addage(uint8_t id, uint8_t score) {
-    if (pool[id].age <= (0xFFFF - score)) {
-        pool[id].age += score;
-    }
+    uint16_t r = ofs % 512; // Don't inline this. Clearly specify type for compiler to optimize. Else it will be seen as uint32_t
+    //return *(uint32_t*)&pool[id].buf[(uint16_t)(ofs % 512)];
+    return *(uint32_t*)(read_buf(ofs, true, false) + r);
 }
 
 static uint32_t load4(uint32_t ofs) {
     uint16_t r = ofs % 512; // Don't inline this
-    uint8_t id = read_buf(ofs, 0);
-
-    // Won't happend, see loadi()
-    /*if (r >= 509) {
-        uint32_t result;
-
-        // 1 - 3 bytes are in nth sector, and the others in n + 1 sector
-        // Read the nth sector and get the bytes in that sector
-        uint8_t i = 0;
-        for (; i < SD_BLOCK_LEN - r; i++) {
-            ((uint8_t *)&result)[i] = pool[id].buf[r + i];
-        }
-
-        // Read the next sector and get the remaining bytes
-        id = read_buf(ofs, 1);
-        for (uint8_t j = 0; j < r - 508; j++) {
-            ((uint8_t *)&result)[i + j] = pool[id].buf[j];
-        }
-
-        // Increase age score
-        addage(id, 2);
-
-        return result;
-    }*/
-
-    /*((uint8_t *)&result)[0] = pool[id].buf[r];     // LSB
-    ((uint8_t *)&result)[1] = pool[id].buf[r + 1];
-    ((uint8_t *)&result)[2] = pool[id].buf[r + 2];
-    ((uint8_t *)&result)[3] = pool[id].buf[r + 3]; // MSB
-
-    // Increase age score
-    addage(id, 2);
-
-    // Return result
-    return result;*/
-
-    // Increase age score
-    addage(id, 2);
-
-    // Return result
-    return *(uint32_t*)&pool[id].buf[r];
+    //return *(uint32_t*)&pool[id].buf[r];
+    return *(uint32_t*)(read_buf(ofs, false, false) + r);
 }
 static uint16_t load2(uint32_t ofs) {
     uint16_t r = ofs % 512;
-    uint8_t id = read_buf(ofs, 0);
-
-    // Won't happend, same reason as loadi() and load4()
-    /*if (r == 511) {
-	    uint16_t result;
-
-        // LSB located in nth sector
-        ((uint8_t *)&result)[0] = pool[id].buf[511];
-
-        // MSB located in n + 1 sector
-        id = read_buf(ofs, 1);
-        ((uint8_t *)&result)[1] = pool[id].buf[0];
-        
-        // Increase age score
-        addage(id, 2);
-
-        return result;
-    }*/
-
-    /*((uint8_t *)&result)[0] = pool[id].buf[r];     // LSB
-    ((uint8_t *)&result)[1] = pool[id].buf[r + 1]; // MSB
-    
-    // Increase age score
-    addage(id, 2);
-
-    // Return result
-    return result;*/
-
-    // Increase age score
-    addage(id, 2);
-
-    // Return result
-    return *(uint16_t *)&pool[id].buf[r];
+    //return *(uint16_t *)&pool[id].buf[r];
+    return *(uint16_t*)(read_buf(ofs, false, false) + r);
 }
 static uint8_t load1(uint32_t ofs) {
-    uint8_t id = read_buf(ofs, 0);
-
-    // Increase age score
-    addage(id, 2);
-
-    // ofs % 512 needs to be cast to uint16_t, or more instructions will be generated
-    return pool[id].buf[(uint16_t)(ofs % 512)];
+    uint16_t r = ofs % 512;
+    //return pool[id].buf[(uint16_t)(ofs % 512)];
+    return *(uint8_t*)(read_buf(ofs, false, false) + r);
 }
 
 static uint32_t store4(uint32_t ofs, uint32_t val) {
     uint16_t r = ofs % 512;
-    uint8_t id = read_buf(ofs, 0);
-
-    // Won't happend, see load4()
-    /*if (r >= 509) {
-        // 1 - 3 bytes are in nth sector, and the others in n + 1 sector
-        // Read the nth sector and change the bytes in that sector
-        uint8_t i = 0;
-        for (; i < SD_BLOCK_LEN - r; i++) {
-            pool[id].buf[r + i] = ((uint8_t *)&val)[i];
-        }
-
-        // Set "dirty" flag
-        pool[id].flag = 1;
-
-        // Read the next sector and get the remaining bytes
-        id = read_buf(ofs, 1);
-        for (uint8_t j = 0; j < r - 508; j++) {
-            pool[id].buf[j] = ((uint8_t *)&val)[i + j];
-        }
-
-        // Set "dirty" flag
-        pool[id].flag = 1;
-
-        // Increase age score
-        addage(id, 1);
-
-        // Return result
-        return val;
-    }*/
-
-    /*pool[id].buf[r]     = ((uint8_t *)&val)[0]; // LSB
-    pool[id].buf[r + 1] = ((uint8_t *)&val)[1];
-    pool[id].buf[r + 2] = ((uint8_t *)&val)[2];
-    pool[id].buf[r + 3] = ((uint8_t *)&val)[3]; // MSB*/
 
     // Store
-    *(uint32_t *)&pool[id].buf[r] = val;
-
-    // Set "dirty" flag
-    pool[id].flag = 1;
-
-    // Increase age score
-    addage(id, 1);
+    //*(uint32_t *)&pool[id].buf[r] = val;
+    *(uint32_t *)(read_buf(ofs, false, true) + r) = val;
 
     // Return result
     return val;
@@ -751,60 +624,23 @@ static uint32_t store4(uint32_t ofs, uint32_t val) {
 
 static uint16_t store2(uint32_t ofs, uint16_t val) {
     uint16_t r = ofs % 512;
-    uint8_t id = read_buf(ofs, 0);
-
-    // Won't happend, see load2
-    /*if (r == 511) {
-        // LSB located in the nth sector
-        pool[id].buf[511] = ((uint8_t *)&val)[0];
-
-        // Set "dirty" flag
-        pool[id].flag = 1;
-
-        // MSB located in the n + 1 sector
-        id = read_buf(ofs, 1);
-        pool[id].buf[0] = ((uint8_t *)&val)[1];
-        
-        // Set "dirty" flag
-        pool[id].flag = 1;
-
-        // Increase age score
-        addage(id, 1);
-
-        // Return result
-        return val;
-    }*/
-
-    /*pool[id].buf[r]     = ((uint8_t *)&val)[0]; // LSB
-    pool[id].buf[r + 1] = ((uint8_t *)&val)[1]; // MSB*/
 
     // Store
-    *(uint16_t *)&pool[id].buf[r] = val;
-    
-    // Set "dirty" flag
-    pool[id].flag = 1;
-
-    // Increase age score
-    addage(id, 1);
+    //*(uint16_t *)&pool[id].buf[r] = val;
+    *(uint16_t *)(read_buf(ofs, false, true) + r) = val;
 
     // Return result
     return val;
 }
 
 static uint8_t store1(uint32_t ofs, uint8_t val) {
-    uint8_t id = read_buf(ofs, 0);
+    uint16_t r = ofs % 512;
 
     // Store
-    // ofs % 512 needs to be cast to uint16_t, or more instructions will be generated
-    pool[id].buf[(uint16_t)(ofs % 512)] = val;
-    
-    // Set "dirty" flag
-    pool[id].flag = 1;
+    //*(uint8_t *)&pool[id].buf[r] = val;
+    *(uint8_t *)(read_buf(ofs, false, true) + r) = val;
 
-    // Increase age score
-    addage(id, 1);
-
-    // Return result
+    // Return results
     return val;
 }
 

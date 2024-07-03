@@ -23,6 +23,14 @@ sim_opt() {
     gcc -I. -march=native -Ofast -funsigned-char -funsigned-bitfields -fpack-struct -fshort-enums -Wall -Wstrict-prototypes -std=gnu99 main_sim.c if_sim.c -o sim
 }
 
+clean() {
+    # sim
+    rm sim dump.bin
+
+    # avr
+    rm *.o *.lst *.map *.elf
+}
+
 # Check for help flag
 if [[ "$1" == "-h" || "$1" == "--help" || "$1" == "help" ]]; then
     echo "Usage: $0 (sim|sim_opt|avr)"
@@ -42,8 +50,12 @@ else
         if [[ "$1" == "avr" ]]; then
             avr
         else
-            echo "Invalid argument: '$1'"
-            exit 1
+            if [[ "$1" == "clean" ]]; then
+                clean
+            else
+                echo "Invalid argument: '$1'"
+                exit 1
+            fi
         fi
     fi
 fi

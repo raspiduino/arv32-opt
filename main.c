@@ -40,7 +40,6 @@
 #include "spi.h"
 #include "sdcard.h"
 #include "sdprint.h"
-#include "types.h"
 
 // mini-rv32ima variables
 int fail_on_all_faults = 0;
@@ -91,38 +90,38 @@ struct cache pool[3];
 
 // Cache hit / miss stat
 #ifdef ENABLE_CACHE_STAT
-UInt32 icache_hit = 0;
-UInt32 icache_miss = 0;
-UInt32 dcache_hit = 0;
-UInt32 dcache_miss = 0;
+uint32_t icache_hit = 0;
+uint32_t icache_miss = 0;
+uint32_t dcache_hit = 0;
+uint32_t dcache_miss = 0;
 #endif
 
 // Functions prototype
-static UInt32 HandleException( UInt32 ir, UInt32 retval );
-static UInt32 HandleControlStore( UInt32 addy, UInt32 val );
-static UInt32 HandleControlLoad( UInt32 addy );
-static void HandleOtherCSRWrite( UInt8 * image, UInt16 csrno, UInt32 value );
-static Int32 HandleOtherCSRRead( UInt8 * image, UInt16 csrno );
+static uint32_t HandleException( uint32_t ir, uint32_t retval );
+static uint32_t HandleControlStore( uint32_t addy, uint32_t val );
+static uint32_t HandleControlLoad( uint32_t addy );
+static void HandleOtherCSRWrite( uint8_t * image, uint16_t csrno, uint32_t value );
+static int32_t HandleOtherCSRRead( uint8_t * image, uint16_t csrno );
 
 // Load / store helper
-static UInt32 store4(UInt32 ofs, UInt32 val);
-static UInt16 store2(UInt32 ofs, UInt16 val);
-static UInt8 store1(UInt32 ofs, UInt8 val);
+static uint32_t store4(uint32_t ofs, uint32_t val);
+static uint16_t store2(uint32_t ofs, uint16_t val);
+static uint8_t store1(uint32_t ofs, uint8_t val);
 
-static UInt32 load4(UInt32 ofs);
-static UInt16 load2(UInt32 ofs);
-static UInt8 load1(UInt32 ofs);
+static uint32_t load4(uint32_t ofs);
+static uint16_t load2(uint32_t ofs);
+static uint8_t load1(uint32_t ofs);
 
-static UInt32 loadi(UInt32 ofs);
+static uint32_t loadi(uint32_t ofs);
 
 // Other
 extern int __heap_start;
 extern int *__brkval;
-UInt32 last_cyclel = 0; // Last cyclel value
+uint32_t last_cyclel = 0; // Last cyclel value
 void dump_state(void);
 
 // Config
-const UInt32 RAM_SIZE = 16777216UL; // Minimum RAM amount (in bytes), just tested (may reduce further by custom kernel)
+const uint32_t RAM_SIZE = 16777216UL; // Minimum RAM amount (in bytes), just tested (may reduce further by custom kernel)
 #define DTB_SIZE 1536               // DTB size (in bytes), must recount manually each time DTB changes
 #define INSTRS_PER_FLIP 1024        // Number of instructions executed before checking status. See loop()
 #define TIME_DIVISOR 2
@@ -146,9 +145,9 @@ const UInt32 RAM_SIZE = 16777216UL; // Minimum RAM amount (in bytes), just teste
 #define MINIRV32_STORE2( ofs, val ) store2(ofs, val)
 #define MINIRV32_STORE1( ofs, val ) store1(ofs, val)
 #define MINIRV32_LOAD4( ofs ) load4(ofs)
-#define MINIRV32_LOAD2_SIGNED( ofs ) (Int8)load2(ofs)
+#define MINIRV32_LOAD2_SIGNED( ofs ) (int8_t)load2(ofs)
 #define MINIRV32_LOAD2( ofs ) load2(ofs)
-#define MINIRV32_LOAD1_SIGNED( ofs ) (Int8)load1(ofs)
+#define MINIRV32_LOAD1_SIGNED( ofs ) (int8_t)load1(ofs)
 #define MINIRV32_LOAD1( ofs ) load1(ofs)
 #define MINIRV32_LOADI( ofs ) loadi(ofs)
 
@@ -174,9 +173,9 @@ unsigned long millis(void) {
 }
 
 // Init cache helper
-void init_cache(UInt8 index, UInt32 tag, uint16_t age) {
-    UInt8 token;
-    UInt8 t = 0;
+void init_cache(uint8_t index, uint32_t tag, uint16_t age) {
+    uint8_t token;
+    uint8_t t = 0;
 
     // Read init sector
 read_init_begin:
@@ -234,7 +233,7 @@ int main(void) {
 
     // Setup cache
     // Init cache0 as icache
-    init_cache(0, 0, 0xFFFF); // buf = 0x0 (code begin at 0x0)
+    init_cache(0, 0, 0xFF); // buf = 0x0 (code begin at 0x0)
 
     // Init cache1 as dcache
     init_cache(1, 6552, 0); // buf = second accessed address (got by dumping address)
@@ -312,7 +311,7 @@ int main(void) {
 
         // Calculate pseudo time
         uint64_t * this_ccount = ((uint64_t*)&core->cyclel);
-        UInt32 elapsedUs = 0;
+        uint32_t elapsedUs = 0;
         elapsedUs = *this_ccount / TIME_DIVISOR - lastTime;
         lastTime += elapsedUs;
 
@@ -363,7 +362,7 @@ static uint32_t HandleControlLoad( uint32_t addy )
 	return 0;
 }
 
-static void HandleOtherCSRWrite( UInt8 * image, UInt16 csrno, UInt32 value )
+static void HandleOtherCSRWrite( uint8_t * image, uint16_t csrno, uint32_t value )
 {
 	if( csrno == 0x136 )
 	{
@@ -396,11 +395,11 @@ static void HandleOtherCSRWrite( UInt8 * image, UInt16 csrno, UInt32 value )
 	}
 	else if( csrno == 0x139 )
 	{
-		UART_putc((UInt8)value);
+		UART_putc((uint8_t)value);
 	}
 }
 
-static Int32 HandleOtherCSRRead( UInt8 * image, UInt16 csrno )
+static int32_t HandleOtherCSRRead( uint8_t * image, uint16_t csrno )
 {
 	if( csrno == 0x140 )
 	{
@@ -435,9 +434,11 @@ uint8_t *read_buf(uint32_t ofs, bool flag, bool write) {
         ret = 0;
         
         // Add age
-        if (pool[0].age <= 0xFFFE) {
+        // Why there's no longer overflow check?
+        // Because it's faster to (if any) overflow, invalidate, and reload cache than to check for overflow on every access.
+        //if (pool[0].age <= 0xFFFE) {
             pool[0].age += 1;
-        }
+        //}
 
         // Set dirty flag if needed
         if (write) {
@@ -447,9 +448,9 @@ uint8_t *read_buf(uint32_t ofs, bool flag, bool write) {
         ret = 1;
         
         // Add age
-        if (pool[1].age <= 0xFFFE) {
+        //if (pool[1].age <= 0xFFFE) {
             pool[1].age += 1;
-        }
+        //}
 
         // Set dirty flag if needed
         if (write) {
@@ -459,9 +460,9 @@ uint8_t *read_buf(uint32_t ofs, bool flag, bool write) {
         ret = 2;
 
         // Add age
-        if (pool[2].age <= 0xFFFE) {
+        //if (pool[2].age <= 0xFFFE) {
             pool[2].age += 1;
-        }
+        //}
 
         // Set dirty flag if needed
         // If you think this can be optimized to pool[2].flag = write, think again!
@@ -498,9 +499,9 @@ uint8_t *read_buf(uint32_t ofs, bool flag, bool write) {
             lru = 0;
         }
 
+        uint8_t token;
 continue_without_finding_lru:
         // Check if LRU cache if dirty
-        uint8_t token;
         if (!pool[lru].flag) { // false = dirty
             // Dirty -> flush to SD
             uint8_t t = 0;
